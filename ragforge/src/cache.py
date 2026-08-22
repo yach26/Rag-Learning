@@ -65,3 +65,9 @@ def set_cached_answer(query: str, strategy: str, answer: str) -> None:
     
     _save_cache(cache)
     logger.info(f"Cached answer for query: '{query}'")
+
+def clear_cache() -> None:
+    """Clear all cached answers."""
+    if CACHE_FILE_PATH.exists():
+        CACHE_FILE_PATH.unlink()
+        logger.info("Cache cleared.")

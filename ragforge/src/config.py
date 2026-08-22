@@ -81,13 +81,13 @@ class Config:
     OCR_DPI: int = 200
 
     # ── LLM / Generation ────────────────────────────────────────────────────
-    LLM_API_KEY: str = os.getenv("LLM_API_KEY", "")
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 
     # gemini-2.0-flash: strong reasoning, fast output.
     # gemini-2.0-flash-lite: noticeably cheaper & lower-latency if you want
-    #   snappier answers for a simple Q&A tool and don't need the extra
+    #   to test basic queries and don't need top-tier reasoning.
     #   reasoning headroom. Swap via LLM_MODEL in your .env — no code change.
-    LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini-2.0-flash")
+    LLM_MODEL: str = os.getenv("LLM_MODEL", "openai/gpt-oss-20b")
 
     # Stream tokens to the UI as they're generated instead of waiting for
     # the full response. Doesn't reduce total latency much, but removes the

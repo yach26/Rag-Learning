@@ -287,6 +287,35 @@ def retrieve(
 
         return final
 
+    # ── Multi-Query ──────────────────────────────────────────────────────────
+    if strategy == "multi_query":
+        from src.query.multi_query import generate_queries
+        from src.reranker import rerank_chunks
+        
+        # 1. Generate alternative queries
+        queries = generate_queries(query)
+        
+        all_chunks = {}
+        # 2. Hybrid search for every query
+        for q in queries:
+            d_res, _ = search_dense(q, candidates)
+            try:
+                b_res, _ = search_bm25(q, candidates)
+            except Exception:
+                b_res = []
+                
+            fused = reciprocal_rank_fusion([d_res, b_res], k=config.RRF_K)
+            for chunk in fused:
+                chunk_id = hash(chunk["text"])
+                if chunk_id not in all_chunks:
+                    all_chunks[chunk_id] = chunk
+                    
+        merged_chunks = list(all_chunks.values())
+        
+        # 3. Rerank the massive pool against the original query
+        final_results = rerank_chunks(query, merged_chunks, top_k)
+        return final_results
+
     # ── HyDE (Hypothetical Document Embeddings) ──────────────────────────────
     if strategy == "hyde":
         from src.query.hyde import generate_hypothetical_document

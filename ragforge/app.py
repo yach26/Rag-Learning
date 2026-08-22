@@ -154,6 +154,47 @@ def render_sidebar(get_collection_stats, config):
             help="How many document chunks to retrieve per query. More = more context but slower."
         )
 
+        # ── Document Management ──
+        with st.expander("📂 Document Management", expanded=False):
+            uploaded_files = st.file_uploader(
+                "Upload PDFs or Markdown", 
+                type=["pdf", "md", "txt"], 
+                accept_multiple_files=True
+            )
+            
+            if st.button("🚀 Process Documents", use_container_width=True):
+                if uploaded_files:
+                    with st.spinner("Saving files..."):
+                        import os
+                        for uf in uploaded_files:
+                            with open(os.path.join(config.DOCUMENTS_DIR, uf.name), "wb") as f:
+                                f.write(uf.getbuffer())
+                    
+                    with st.spinner("Ingesting and building vector store..."):
+                        from src.ingest import run_ingestion_pipeline
+                        run_ingestion_pipeline()
+                    st.success("Ingestion complete!")
+                    st.rerun()
+                else:
+                    st.warning("Please upload files first.")
+
+            if st.button("🧨 Wipe Database", use_container_width=True):
+                from src.vector_store import clear_collection
+                clear_collection()
+                
+                # Also clear hash tracking so it truly restarts
+                import os
+                hash_file = config.PROJECT_ROOT / "data" / ".file_hashes.json"
+                bm25_file = config.PROJECT_ROOT / "data" / "bm25_index.pkl"
+                if hash_file.exists(): hash_file.unlink()
+                if bm25_file.exists(): bm25_file.unlink()
+                
+                st.success("Vector DB wiped! Upload files to start fresh.")
+                st.rerun()
+        
+        st.divider()
+
+        # ── Controls ──
         enable_rewrite = st.checkbox(
             "Enable Conversational Rewriting",
             value=True,
@@ -183,6 +224,12 @@ def render_sidebar(get_collection_stats, config):
             value=True,
             help="Blocks prompt injections on input and toxic content on output."
         )
+
+        st.divider()
+        if st.button("🗑️ Clear Cache", help="Deletes all cached semantic responses."):
+            from src.cache import clear_cache
+            clear_cache()
+            st.success("Cache cleared!")
 
         st.divider()
 
@@ -389,23 +436,8 @@ def main():
                 st.markdown(cached_ans)
                 answer = cached_ans
             else:
-                # ── Rewrite & Expand ─────────────────────────────────────────────
-                with st.spinner("Rewriting query..."):
-                    from src.query.rewrite import normalize_query
-                    final_query = user_query
-                    
-                    if enable_rewrite:
-                        final_query = rewrite_query(user_query, st.session_state.messages[:-1])
-                    
-                    # 2. Spellcheck
-                    final_query = normalize_query(final_query)
-                    
-                    # 3. Query Expansion
-                    if enable_expansion:
-                        final_query = expand_query(final_query)
-                        
-                    if final_query != user_query:
-                        st.caption(f"🔄 Transformed: *{final_query}*")
+                if final_query != user_query:
+                    st.caption(f"🔄 Transformed: *{final_query}*")
                 
                 # ── Retrieve ──────────────────────────────────────────────────────
                 with st.spinner(f"🔍 Searching documents [{strategy}]..."):
@@ -457,7 +489,6 @@ def main():
                     except RuntimeError as e:
                         answer = f"❌ Generation error: {e}"
                         st.markdown(answer)
-                st.markdown(answer)
 
             # ── Sources + context (only if we actually got chunks) ───────────
             if retrieved_chunks:

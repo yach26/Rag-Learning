@@ -146,6 +146,13 @@ def normalize_query(raw_query: str) -> str:
         from spellchecker import SpellChecker
         spell = SpellChecker()
         
+        # Add common tech terms to prevent catastrophic query drift
+        spell.word_frequency.load_words([
+            'cyber', 'cybersecurity', 'rag', 'llm', 'api', 'json', 
+            'yaml', 'python', 'github', 'openai', 'gemini', 'groq',
+            'app', 'repo', 'dev', 'ops', 'devops', 'sql', 'nosql'
+        ])
+        
         # Split by whitespace, keeping punctuation attached if possible, 
         # or use a simple regex to extract words to check.
         # pyspellchecker works best on raw words.

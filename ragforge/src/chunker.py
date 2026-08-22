@@ -247,7 +247,7 @@ def print_chunking_stats(chunks: List[Chunk]) -> None:
     sizes = [len(c["text"]) for c in chunks]
     sources = set(c["metadata"]["source"] for c in chunks)
 
-    print(f"\n── Chunking Stats ──────────────────────────────")
+    print(f"\n--- Chunking Stats ------------------------------")
     print(f"  Total chunks    : {len(chunks)}")
     print(f"  Source files    : {len(sources)}")
     print(f"  Avg chunk size  : {sum(sizes) // len(sizes)} chars")

@@ -30,8 +30,8 @@ Phase 1 items preserved:
 
 import logging
 from typing import Dict, Iterator, List, Any, Optional
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-from google.api_core.exceptions import ResourceExhausted
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_not_exception_type
+import groq
 
 from src.config import config
 
@@ -49,6 +49,7 @@ IMPORTANT RULES:
 3. Do NOT invent facts or use your pre-trained knowledge to fill in gaps.
 4. Be concise and direct. Quote specific details from the context when helpful.
 5. If the context only partially answers the question, share what is available and note what is missing.
+6. **FORMATTING**: Always structure your answer beautifully using Markdown (bullet points, bold text, headers, and code blocks if applicable) to make it easy to read.
 
 Context:
 {context}
@@ -68,6 +69,7 @@ IMPORTANT RULES:
 3. Do NOT invent facts or use your pre-trained knowledge to fill in gaps.
 4. Be concise and direct. Quote specific details from the context when helpful.
 5. If the context only partially answers the question, share what is available and note what is missing.
+6. **FORMATTING**: Always structure your answer beautifully using Markdown (bullet points, bold text, headers, and code blocks if applicable) to make it easy to read.
 
 Context:
 {context}
@@ -172,26 +174,54 @@ def build_prompt(
 # ── API helpers ───────────────────────────────────────────────────────────────
 
 def _require_api_key() -> None:
-    if not config.LLM_API_KEY:
+    if not config.GROQ_API_KEY:
         raise ValueError(
-            "LLM_API_KEY is not set. "
+            "GROQ_API_KEY is not set. "
             "Please add it to your .env file.\n"
-            "Get a free key at: https://aistudio.google.com/apikey"
+            "Get a free key at: https://console.groq.com/keys"
         )
 
-
 _client_instance = None
+
+class GroqGeminiAdapter:
+    def __init__(self, api_key):
+        import groq
+        self.client = groq.Groq(api_key=api_key)
+        self.models = self.ModelsAdapter(self.client)
+        
+    class ModelsAdapter:
+        def __init__(self, client):
+            self.client = client
+            
+        def generate_content(self, model, contents, **kwargs):
+            response = self.client.chat.completions.create(
+                model=config.LLM_MODEL,
+                messages=[{"role": "user", "content": contents}]
+            )
+            class FakeResponse:
+                def __init__(self, text):
+                    self.text = text
+            return FakeResponse(response.choices[0].message.content)
+            
+        def generate_content_stream(self, model, contents, **kwargs):
+            stream = self.client.chat.completions.create(
+                model=config.LLM_MODEL,
+                messages=[{"role": "user", "content": contents}],
+                stream=True
+            )
+            class FakeStreamEvent:
+                def __init__(self, text):
+                    self.text = text
+            for chunk in stream:
+                content = chunk.choices[0].delta.content
+                if content:
+                    yield FakeStreamEvent(content)
 
 def _get_client():
     global _client_instance
     if _client_instance is None:
-        try:
-            from google import genai
-        except ImportError:
-            raise RuntimeError(
-                "google-genai package not installed. Run: pip install google-genai"
-            )
-        _client_instance = genai.Client(api_key=config.LLM_API_KEY)
+        _require_api_key()
+        _client_instance = GroqGeminiAdapter(api_key=config.GROQ_API_KEY)
     return _client_instance
 
 
@@ -200,8 +230,8 @@ def _get_client():
 @retry(
     stop=stop_after_attempt(5),
     wait=wait_exponential(multiplier=1, min=2, max=10),
-    retry=retry_if_exception_type(Exception), # Catch all since google-genai throws generic exceptions for 429
-    before_sleep=lambda retry_state: logger.warning(f"Rate limited. Retrying in {retry_state.next_action.sleep}s...")
+    retry=retry_if_not_exception_type(groq.RateLimitError),
+    before_sleep=lambda retry_state: logger.warning(f"Retrying LLM call in {retry_state.next_action.sleep}s...")
 )
 def generate_answer(
     query: str,
@@ -246,11 +276,10 @@ def generate_answer_stream(
         @retry(
             stop=stop_after_attempt(5),
             wait=wait_exponential(multiplier=1, min=2, max=10),
-            retry=retry_if_exception_type(Exception)
+            retry=retry_if_not_exception_type(groq.RateLimitError)
         )
         def _get_stream():
-            from google import genai
-            client = genai.Client(api_key=config.LLM_API_KEY)
+            client = _get_client()
             return client.models.generate_content_stream(
                 model=config.LLM_MODEL,
                 contents=prompt,
