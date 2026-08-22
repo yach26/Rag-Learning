@@ -1,0 +1,32 @@
+# ─── Secrets ───────────────────────────────────
+.env
+
+# ─── Vector DB (generated, do not commit) ──────
+chroma_db/
+
+# ─── Python cache ──────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# ─── Virtual environments ───────────────────────
+venv/
+.venv/
+env/
+ENV/
+
+# ─── Build artifacts ────────────────────────────
+*.egg-info/
+dist/
+build/
+
+# ─── IDE / OS ───────────────────────────────────
+.idea/
+.vscode/
+*.DS_Store
+Thumbs.db
+
+# ─── pytest cache ───────────────────────────────
+.pytest_cache/
