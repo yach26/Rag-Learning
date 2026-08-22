@@ -1,24 +1,16 @@
-# RAGForge - Phase 1 Dependencies
+# RAGForge - Phase 2 Dependencies
 # ================================
-# Core document processing
-pymupdf>=1.24.0          # PDF extraction (imported as 'fitz')
-
-# Embeddings
-sentence-transformers>=3.0.0   # Loads and runs all-MiniLM-L6-v2
-torch>=2.0.0                   # Required by sentence-transformers
-
-# Vector database
-chromadb>=0.5.0          # Local persistent vector store
-
-# LLM API (Google Gemini — new SDK)
-google-genai>=1.0.0              # Google Gemini API client (new google-genai SDK)
-
-# UI
-streamlit>=1.38.0        # Web interface
-
-# Utilities
-python-dotenv>=1.0.0     # Load .env file
-tqdm>=4.66.0             # Progress bars during ingestion
-
-# Testing
-pytest>=8.0.0            # Test runner
+pymupdf>=1.24.0
+sentence-transformers>=3.0.0
+torch>=2.0.0
+chromadb>=0.5.0
+google-genai>=1.0.0
+streamlit>=1.38.0
+python-dotenv>=1.0.0
+tqdm>=4.66.0
+pytest>=8.0.0
+# Phase 2 new dependencies
+rank-bm25>=0.2.2
+pytesseract>=0.3.10
+Pillow>=10.0.0
+pyspellchecker>=0.8.0

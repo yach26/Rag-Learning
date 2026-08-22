@@ -2,98 +2,100 @@
 src/config.py — Central configuration for RAGForge
 ====================================================
 
-WHY THIS FILE EXISTS
---------------------
-Without a config file, you'd scatter magic numbers and file paths throughout
-your code. If you want to change the chunk size, you'd have to hunt down every
-place it's used. By putting everything here, you change ONE value and it
-propagates everywhere.
+CHANGES IN THIS REVISION (Phase 2)
+-------------------------------------
+- HASH_STORE_PATH: path for incremental-ingestion MD5 hash map.
+- HYBRID_CANDIDATES / BM25_WEIGHT / RRF_K: hybrid BM25+vector search.
+- RERANKER_MODEL / RERANK_CANDIDATES / USE_RERANKER: CrossEncoder rerank.
+- USE_OCR_FALLBACK / OCR_DPI: pytesseract OCR for scanned PDF pages.
+- CONVERSATION_HISTORY_TURNS: how many prior turns to include in prompts
+  and pass to the query rewriter.
 
-This is also where we load environment variables from the .env file so that
-the rest of the codebase never has to call os.getenv() directly.
-
-HOW TO USE
-----------
-    from src.config import config
-    print(config.CHUNK_SIZE)
-    print(config.LLM_API_KEY)
+Phase 1 changes kept:
+- STREAM_RESPONSES: stream Gemini tokens to UI.
+- TOP_K / TOP_K_MAX: retrieval depth defaults.
+- MAX_CHUNK_PREVIEW_CHARS: UI preview length.
 """
 
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# ── Load .env file ──────────────────────────────────────────────────────────
-# This looks for a .env file starting from the project root.
-# If you run scripts from inside the ragforge/ directory, Path.cwd() is correct.
-# If you ever run from a subdirectory, update this path accordingly.
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
 
 class Config:
-    """
-    All configuration lives here as class attributes.
-    Accessing config.CHUNK_SIZE is explicit and easy to find.
-    """
-
     # ── Paths ────────────────────────────────────────────────────────────────
-    # Root of the ragforge project (the folder containing src/, data/, etc.)
     PROJECT_ROOT: Path = Path(__file__).parent.parent
-
-    # Where user documents are stored (PDF, TXT, Markdown)
     DOCUMENTS_DIR: Path = PROJECT_ROOT / "data" / "documents"
-
-    # Where ChromaDB will persist its data on disk
     CHROMA_DB_DIR: Path = PROJECT_ROOT / "chroma_db"
 
+    # Phase 2: Incremental ingestion hash store
+    HASH_STORE_PATH: Path = PROJECT_ROOT / "data" / ".file_hashes.json"
+
     # ── ChromaDB ─────────────────────────────────────────────────────────────
-    # The name of the ChromaDB collection we'll store all chunks in.
-    # Think of a "collection" like a table in a relational database.
     CHROMA_COLLECTION_NAME: str = "ragforge_documents"
 
     # ── Embedding Model ──────────────────────────────────────────────────────
-    # sentence-transformers model to use for embedding text into vectors.
-    #
-    # all-MiniLM-L6-v2 is a great beginner model:
-    #   - Small: ~80 MB download
-    #   - Fast: runs on CPU in milliseconds
-    #   - Good quality: 384-dimensional vectors
-    #   - Free: runs entirely locally, no API key needed
     EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
 
     # ── Chunking ─────────────────────────────────────────────────────────────
-    # CHUNK_SIZE: How many characters per chunk.
-    #
-    # A quick mental model:
-    #   1 token ≈ 4 characters (in English)
-    #   500 tokens ≈ 2000 characters
-    #
-    # Why 2000 chars? It's a good balance:
-    #   - Large enough to contain complete thoughts and sentences
-    #   - Small enough that the LLM gets focused, relevant context
-    CHUNK_SIZE: int = 2000       # characters
-
-    # CHUNK_OVERLAP: How many characters from the end of one chunk
-    # are repeated at the start of the next chunk.
-    #
-    # Why overlap? Imagine a sentence that falls exactly on the boundary
-    # between two chunks. Without overlap, neither chunk contains the full
-    # thought. With overlap, at least one chunk will have it complete.
+    CHUNK_SIZE: int = 2000       # characters (~500 tokens)
     CHUNK_OVERLAP: int = 200     # characters
 
     # ── Retrieval ────────────────────────────────────────────────────────────
-    # How many chunks to retrieve from ChromaDB for each user query.
-    # More chunks = more context for the LLM, but also more tokens = slower + costlier.
-    TOP_K: int = 5
+    # Default top_k. Kept modest on purpose: smaller prompt -> faster answer.
+    TOP_K: int = 4
+    TOP_K_MAX: int = 8           # UI slider ceiling
+
+    # Phase 2: Hybrid search — fetch this many candidates from each ranker
+    # before merging with Reciprocal Rank Fusion, then reranking.
+    HYBRID_CANDIDATES: int = 20
+
+    # Reciprocal Rank Fusion constant (standard value = 60).
+    RRF_K: int = 60
+
+    # ── Reranking ────────────────────────────────────────────────────────────
+    # CrossEncoder model for reranking — CPU-friendly, ~85 MB download.
+    RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+    # How many hybrid candidates to pipe into the reranker.
+    # Must be <= HYBRID_CANDIDATES. Final answer uses TOP_K.
+    RERANK_CANDIDATES: int = 20
+
+    # Set to False to skip reranking (useful for ablation / debugging).
+    USE_RERANKER: bool = True
+
+    # ── Conversation ─────────────────────────────────────────────────────────
+    # How many prior conversation turns (user+assistant pairs) to include
+    # in the query rewriter and in the generation prompt.
+    CONVERSATION_HISTORY_TURNS: int = 3
+
+    # ── OCR ──────────────────────────────────────────────────────────────────
+    # Route empty PDF pages through pytesseract for scanned/image-only PDFs.
+    # Requires Tesseract binary: winget install UB-Mannheim.TesseractOCR
+    USE_OCR_FALLBACK: bool = True
+
+    # Page render DPI for OCR — 200 is a good speed/quality balance.
+    # Use 300 for small-print or dense technical documents.
+    OCR_DPI: int = 200
 
     # ── LLM / Generation ────────────────────────────────────────────────────
-    # API key loaded from .env — never hardcoded here.
     LLM_API_KEY: str = os.getenv("LLM_API_KEY", "")
 
-    # Which Gemini model to use. gemini-3.6-flash is the current recommended model.
+    # gemini-3.6-flash: strongest Flash-tier reasoning, ~304 tok/s output.
+    # gemini-3.5-flash-lite: noticeably cheaper & lower-latency if you want
+    #   snappier answers for a simple Q&A tool and don't need the extra
+    #   reasoning headroom. Swap via LLM_MODEL in your .env — no code change.
     LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini-3.6-flash")
 
+    # Stream tokens to the UI as they're generated instead of waiting for
+    # the full response. Doesn't reduce total latency much, but removes the
+    # "did it freeze?" dead air almost entirely.
+    STREAM_RESPONSES: bool = True
 
-# Single shared instance — import this everywhere:
-#   from src.config import config
+    # ── UI ───────────────────────────────────────────────────────────────────
+    MAX_CHUNK_PREVIEW_CHARS: int = 800
+
+
 config = Config()

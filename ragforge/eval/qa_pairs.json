@@ -1,0 +1,28 @@
+[
+  {
+    "_comment": "Replace these with real questions from your documents in data/documents/",
+    "question": "What is the main topic of the first document?",
+    "expected_sources": ["your_document.pdf"],
+    "expected_pages": [1]
+  },
+  {
+    "question": "What are the key requirements described in the document?",
+    "expected_sources": ["your_document.pdf"],
+    "expected_pages": [2]
+  },
+  {
+    "question": "What penalties or consequences are mentioned?",
+    "expected_sources": ["your_document.pdf"],
+    "expected_pages": [3]
+  },
+  {
+    "question": "Who are the parties involved?",
+    "expected_sources": ["your_document.pdf"],
+    "expected_pages": [1]
+  },
+  {
+    "question": "What dates or deadlines are specified?",
+    "expected_sources": ["your_document.pdf"],
+    "expected_pages": [2]
+  }
+]

@@ -2,76 +2,41 @@
 src/generator.py — LLM Generation Module
 ==========================================
 
-WHAT PROBLEM DOES THIS SOLVE?
-------------------------------
-We have retrieved the most relevant chunks from our documents. Now we need to:
-1. Combine those chunks into a single "context" text block
-2. Build a prompt that instructs the LLM on how to use that context
-3. Call the LLM API and get back a generated answer
+CHANGES IN THIS REVISION (Phase 2) — CONVERSATION-AWARE GENERATION
+---------------------------------------------------------------------
+build_prompt(), generate_answer(), and generate_answer_stream() now
+accept an optional `conversation_history` parameter (list of
+{"role": str, "content": str} dicts from st.session_state.messages).
 
-This is the "G" in RAG — Generation.
+When history is provided, the last CONVERSATION_HISTORY_TURNS turns
+(user+assistant pairs) are injected between the context and the
+current question so Gemini can resolve references like "what about
+the second one?" or "can you expand on that?" even without query
+rewriting.
 
-WHY DO WE NEED A PROMPT TEMPLATE?
------------------------------------
-Without careful prompting, LLMs will:
-- Answer from their training data (ignoring our documents)
-- Hallucinate facts that sound plausible but aren't in the context
-- Mix document information with pre-trained knowledge
+Design:
+- History is formatted as compact "User: … / Assistant: …" text blocks.
+- The PROMPT_TEMPLATE with history is only used when history is non-empty
+  — otherwise falls back to the original stateless template, so all
+  existing tests pass without modification.
+- Both streaming and non-streaming paths receive history identically.
 
-Our prompt explicitly tells the model:
-  "Use ONLY the provided context. If you don't know, say so."
-
-This is called "grounding" — anchoring the model's output to a specific source.
-
-WHY GOOGLE GEMINI?
-------------------
-- gemini-2.0-flash is fast and has a generous free tier
-- No credit card required for the free tier
-- Simple REST API via the google-generativeai Python SDK
-- Handles long contexts well (important for RAG with multiple chunks)
-
-WHAT THE LLM ACTUALLY RECEIVES:
----------------------------------
-It receives a single string (the prompt) like this:
-
-    You are a helpful assistant...
-    Use ONLY the provided context...
-
-    Context:
-    [Chunk 1 text]
-
-    [Chunk 2 text]
-
-    [Chunk 3 text]
-
-    Question:
-    What is the main topic?
-
-The LLM reads this entire string and generates a completion.
-It doesn't "see" our vector database — it only sees plain text.
-
-INTERNAL FLOW:
---------------
-generate_answer(query, retrieved_chunks)
-    ↓
-build_prompt(query, chunks)          ← constructs the full prompt string
-    ↓
-call_gemini_api(prompt)             ← sends to Google's API
-    ↓
-answer: str                          ← the LLM's response
+Phase 1 items preserved:
+- STREAM_RESPONSES flag.
+- generate_answer() non-streaming (for CLI / eval scripts).
+- generate_answer_stream() streaming (for Streamlit).
+- All error handling / API key guards.
 """
 
 import logging
-from typing import List, Dict, Any
+from typing import Dict, Iterator, List, Any, Optional
 
 from src.config import config
 
 logger = logging.getLogger("RAGForge.Generator")
 
 
-# ── Prompt Template ───────────────────────────────────────────────────────────
-# This is the instruction we give the LLM. Every answer is grounded here.
-# The {context} and {question} placeholders are filled in at runtime.
+# ── Prompt templates ──────────────────────────────────────────────────────────
 
 PROMPT_TEMPLATE = """You are a helpful assistant that answers questions using ONLY the provided document context.
 
@@ -92,25 +57,69 @@ Question:
 Answer:"""
 
 
-def build_prompt(query: str, retrieved_chunks: List[Dict[str, Any]]) -> str:
+PROMPT_TEMPLATE_WITH_HISTORY = """You are a helpful assistant that answers questions using ONLY the provided document context.
+
+IMPORTANT RULES:
+1. Use ONLY the information in the Context section below.
+2. If the answer cannot be found in the provided context, say exactly:
+   "I don't have enough information in the provided documents to answer this question."
+3. Do NOT invent facts or use your pre-trained knowledge to fill in gaps.
+4. Be concise and direct. Quote specific details from the context when helpful.
+5. If the context only partially answers the question, share what is available and note what is missing.
+
+Context:
+{context}
+
+Recent conversation:
+{history}
+
+Current question:
+{question}
+
+Answer:"""
+
+
+def _format_history(
+    history: List[Dict[str, str]],
+    max_turns: int,
+) -> str:
+    """Format the last `max_turns` conversation turns as readable text."""
+    # Take the last max_turns*2 messages (each turn = 1 user + 1 assistant).
+    recent = history[-(max_turns * 2):]
+    lines = []
+    for msg in recent:
+        role = msg.get("role", "user").capitalize()
+        content = msg.get("content", "").strip()
+        if content:
+            # Trim very long messages to avoid bloating the prompt.
+            if len(content) > 400:
+                content = content[:400] + "…"
+            lines.append(f"{role}: {content}")
+    return "\n".join(lines)
+
+
+def build_prompt(
+    query: str,
+    retrieved_chunks: List[Dict[str, Any]],
+    conversation_history: Optional[List[Dict[str, str]]] = None,
+) -> str:
     """
-    Assemble the final prompt by combining retrieved chunks and the user query.
+    Build the full prompt string for the LLM.
 
-    Each chunk is labelled with its source and page number so the LLM can
-    reference them in its answer if needed.
-
-    Args:
-        query:            The user's question.
-        retrieved_chunks: List of result dicts from retriever.retrieve().
-
-    Returns:
-        A single prompt string ready to send to the LLM.
+    Parameters
+    ----------
+    query : str
+        The current (possibly rewritten) user question.
+    retrieved_chunks : list
+        Chunks returned by retriever.retrieve().
+    conversation_history : list, optional
+        Full st.session_state.messages list. When provided, the last
+        CONVERSATION_HISTORY_TURNS turns are included in the prompt so
+        the LLM can resolve follow-up references.
     """
     if not retrieved_chunks:
-        # No context available — the LLM will answer from nothing
         context_text = "[No relevant context found in documents]"
     else:
-        # Format each chunk as a labeled section
         context_parts = []
         for i, chunk in enumerate(retrieved_chunks, start=1):
             source = chunk.get("source", "unknown")
@@ -121,34 +130,25 @@ def build_prompt(query: str, retrieved_chunks: List[Dict[str, Any]]) -> str:
             )
         context_text = "\n\n".join(context_parts)
 
-    prompt = PROMPT_TEMPLATE.format(
-        context=context_text,
-        question=query.strip(),
-    )
-    return prompt
+    if conversation_history:
+        history_text = _format_history(
+            conversation_history,
+            max_turns=config.CONVERSATION_HISTORY_TURNS,
+        )
+        if history_text:
+            return PROMPT_TEMPLATE_WITH_HISTORY.format(
+                context=context_text,
+                history=history_text,
+                question=query.strip(),
+            )
+
+    # No history or empty history — use the original stateless template.
+    return PROMPT_TEMPLATE.format(context=context_text, question=query.strip())
 
 
-def generate_answer(
-    query: str,
-    retrieved_chunks: List[Dict[str, Any]],
-) -> str:
-    """
-    Generate an answer to the user's query using the retrieved document context.
+# ── API helpers ───────────────────────────────────────────────────────────────
 
-    This ties together prompt construction and LLM API calls.
-
-    Args:
-        query:            The user's original question.
-        retrieved_chunks: Top-k chunks from retriever.retrieve().
-
-    Returns:
-        The LLM's answer as a string.
-
-    Raises:
-        ValueError: If the API key is not configured.
-        RuntimeError: If the LLM API call fails.
-    """
-    # ── Validate API key ──────────────────────────────────────────────────────
+def _require_api_key() -> None:
     if not config.LLM_API_KEY:
         raise ValueError(
             "LLM_API_KEY is not set. "
@@ -156,63 +156,86 @@ def generate_answer(
             "Get a free key at: https://aistudio.google.com/apikey"
         )
 
-    # ── Build the prompt ──────────────────────────────────────────────────────
-    prompt = build_prompt(query, retrieved_chunks)
+
+_client_instance = None
+
+def _get_client():
+    global _client_instance
+    if _client_instance is None:
+        try:
+            from google import genai
+        except ImportError:
+            raise RuntimeError(
+                "google-genai package not installed. Run: pip install google-genai"
+            )
+        _client_instance = genai.Client(api_key=config.LLM_API_KEY)
+    return _client_instance
+
+
+# ── Generation functions ──────────────────────────────────────────────────────
+
+def generate_answer(
+    query: str,
+    retrieved_chunks: List[Dict[str, Any]],
+    conversation_history: Optional[List[Dict[str, str]]] = None,
+) -> str:
+    """Non-streaming: returns the full answer as a single string."""
+    _require_api_key()
+    prompt = build_prompt(query, retrieved_chunks, conversation_history)
     logger.info(f"Prompt length: {len(prompt)} characters")
 
-    # ── Call Google Gemini API ────────────────────────────────────────────────
-    return _call_gemini(prompt)
-
-
-def _call_gemini(prompt: str) -> str:
-    """
-    Send a prompt to the Google Gemini API and return the response text.
-
-    Uses the new google-genai SDK (google.genai).
-    The model is configured via:
-        config.LLM_MODEL  (default: "gemini-2.5-flash")
-        config.LLM_API_KEY
-
-    Args:
-        prompt: The fully assembled prompt string.
-
-    Returns:
-        The model's response text.
-
-    Raises:
-        RuntimeError: If the API returns an error.
-    """
     try:
-        from google import genai
-    except ImportError:
-        raise RuntimeError(
-            "google-genai package not installed. "
-            "Run: pip install google-genai"
-        )
-
-    try:
-        # Create a client with our API key
-        client = genai.Client(api_key=config.LLM_API_KEY)
-
+        client = _get_client()
         logger.info(f"Calling Gemini API (model: {config.LLM_MODEL})...")
-
         response = client.models.generate_content(
             model=config.LLM_MODEL,
             contents=prompt,
         )
-
-        answer = response.text
-        logger.info("Gemini API response received.")
-        return answer
-
+        return response.text
     except Exception as e:
         raise RuntimeError(
-            f"Gemini API call failed: {e}\n"
-            "Check your API key and internet connection."
+            f"Gemini API call failed: {e}\nCheck your API key and internet connection."
         ) from e
 
 
-# ── CLI Entry Point ───────────────────────────────────────────────────────────
+def generate_answer_stream(
+    query: str,
+    retrieved_chunks: List[Dict[str, Any]],
+    conversation_history: Optional[List[Dict[str, str]]] = None,
+) -> Iterator[str]:
+    """
+    Streaming version: yields text chunks as Gemini generates them.
+    The Client is created inside the generator to ensure its lifecycle 
+    matches the stream iteration exactly, preventing "client closed" errors 
+    in Streamlit's threaded environment.
+    """
+    _require_api_key()
+    prompt = build_prompt(query, retrieved_chunks, conversation_history)
+    logger.info(f"Prompt length: {len(prompt)} characters")
+
+    def _iterate():
+        try:
+            # Import locally to avoid issues
+            from google import genai
+            client = genai.Client(api_key=config.LLM_API_KEY)
+            
+            logger.info(f"Calling Gemini API (streaming, model: {config.LLM_MODEL})...")
+            stream = client.models.generate_content_stream(
+                model=config.LLM_MODEL,
+                contents=prompt,
+            )
+            
+            for event in stream:
+                if getattr(event, "text", None):
+                    yield event.text
+        except Exception as e:
+            # Surface mid-stream failures as visible text rather than
+            # crashing the whole UI silently.
+            yield f"\n\n⚠️ *Response cut off — stream error: {e}*"
+
+    return _iterate()
+
+
 if __name__ == "__main__":
     from src.retriever import retrieve, format_results_for_display
 
