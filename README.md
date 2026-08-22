@@ -70,7 +70,17 @@ Phase 2 upgrades the basic pipeline to solve real-world retrieval failures:
 7. **Local Query Normalisation**: Uses `pyspellchecker` to instantly fix typos before embedding, preventing catastrophic query drift.
 8. **Evaluation Harness**: Automatically measures `hit_rate@k` against ground-truth Q&A pairs to test retrieval quality.
 
-### RAGForge Architecture (Phase 2)
+### Phase 3: The Advanced Production Pipeline
+Phase 3 introduces advanced semantic techniques and strict guardrails for robust deployments:
+1. **Multi-Query Retrieval**: LLM generates 3 alternative phrasings of the user's query. We retrieve for all 4 queries, pool, deduplicate, and rerank to defeat vocabulary mismatch.
+2. **HyDE (Hypothetical Document Embeddings)**: LLM hallucinates a "perfect" answer to embed, solving the semantic gap between questions and declarative answers.
+3. **Graph-Augmented Dense Search**: An offline pipeline extracts Named Entities from chunks. At query time, we extract entities from the prompt and directly look up associated chunks, guaranteeing 100% recall for specific names/IDs.
+4. **Self-Correcting RAG**: The system drafts an answer internally, then runs an `EVALUATOR_PROMPT` to grade its own draft for hallucination. It only streams to the user if the draft passes.
+5. **Semantic Response Caching**: Identical normalized queries hit a fast local cache, bypassing retrieval and LLM generation entirely to save API costs and reduce TTFT to 0.
+6. **Strict Guardrails**: Fast, local regex filters prevent prompt injection attacks ("ignore all previous instructions") and toxic outputs.
+7. **LLM-as-a-Judge Evaluation**: Fully automated `evaluator.py` script grades the pipeline on Context Relevance and Answer Faithfulness.
+
+### RAGForge Architecture (Phase 3)
 
 ```
                     ┌──────────────┐
@@ -93,18 +103,25 @@ Phase 2 upgrades the basic pipeline to solve real-world retrieval failures:
                     │   ChromaDB   │  Local persistent vector store
                     └──────────────┘
 
-        ──────── QUERY TIME ────────
+         ──────── QUERY TIME ────────
 
-             User Question
+              User Question
                    ↓
-           Query Rewriting & Spellcheck
+          [Input Guardrail Check]
                    ↓
-       ┌───────────┴───────────┐
-       ↓                       ↓
- Vector Search           BM25 Keyword Search
- (ChromaDB)              (In-Memory Index)
-       ↓                       ↓
-       └───────────┬───────────┘
+         [Semantic Cache Lookup] ──→ Cache Hit? ──→ Output
+                   ↓ (Miss)
+      Query Rewriting & Spellcheck
+                   ↓
+         Query Transformation Node
+      (Expansion / Multi-Query / HyDE)
+                   ↓
+       ┌───────────┼───────────┐
+       ↓           ↓           ↓
+ Vector Search   BM25      Graph Lookup
+  (ChromaDB)   (In-Mem)  (Entity Graph)
+       ↓           ↓           ↓
+       └───────────┼───────────┘
                    ↓
          Reciprocal Rank Fusion
                    ↓
@@ -112,9 +129,14 @@ Phase 2 upgrades the basic pipeline to solve real-world retrieval failures:
                    ↓
            Prompt + Context
                    ↓
-            Gemini LLM
+              Gemini LLM (Draft)
+                   ↓
+         [Self-Correction Eval] ──→ Fail? ──→ Fallback
+                   ↓ (Pass)
+         [Output Guardrail Check]
                    ↓
          Answer + Sources (Streamed)
+                  & Cache Save
 ```
 
 ### Running RAGForge

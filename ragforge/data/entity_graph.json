@@ -1,0 +1,82 @@
+{
+  "azure": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0000",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0001",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0002"
+  ],
+  "nyc tlc": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0000"
+  ],
+  "azure data factory": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0000"
+  ],
+  "adls gen2": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0000",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0001",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0004",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0005"
+  ],
+  "blob storage": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0000",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0004",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0005"
+  ],
+  "aws": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0000",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0001"
+  ],
+  "gcp": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0000",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0001"
+  ],
+  "microsoft": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0000",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0001",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0002"
+  ],
+  "databricks": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0001",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0003",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0004",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0005"
+  ],
+  "spark": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0001",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0003",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0004",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0005"
+  ],
+  "azure databricks": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0001"
+  ],
+  "adf": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0001",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0005"
+  ],
+  "central india": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0001",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0003"
+  ],
+  "east us": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0001"
+  ],
+  "data factory": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0002"
+  ],
+  "azure portal": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0003",
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0005"
+  ],
+  "mumbai": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0003"
+  ],
+  "azure data lake storage gen2": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0003"
+  ],
+  "azure blob storage": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0003"
+  ],
+  "delta": [
+    "01_Azure_Basics_for_NYC_TLC_Project.pdf__chunk_0005"
+  ]
+}

@@ -83,7 +83,7 @@ def _import_modules():
         from src.generator import generate_answer_stream
         from src.vector_store import get_collection_stats
         from src.config import config
-        from src.query_rewriter import rewrite_query
+        from src.query.rewrite import rewrite_query
         return retrieve_with_timing, generate_answer_stream, get_collection_stats, config, rewrite_query
     except ImportError as e:
         st.error(f"❌ Import error: {e}\n\nRun: `pip install -r requirements.txt`")
@@ -123,12 +123,15 @@ def render_sidebar(get_collection_stats, config):
 
         # Phase 3: Retrieval Strategy selector
         st.subheader("🔎 Retrieval Strategy")
-        strategies = ["dense", "bm25", "hybrid", "hybrid_rerank"]
+        strategies = ["dense", "bm25", "hybrid", "hybrid_rerank", "multi_query", "hyde", "graph_augmented"]
         strategy_labels = {
             "dense": "Dense (vector only)",
             "bm25": "BM25 (keyword only)",
             "hybrid": "Hybrid (Dense + BM25 + RRF)",
             "hybrid_rerank": "Hybrid + Reranker ⭐",
+            "multi_query": "Multi-Query (LLM generation) 🚀",
+            "hyde": "HyDE (LLM hallucination) 🧠",
+            "graph_augmented": "Graph-Augmented Dense (Entity Lookup) 🕸️",
         }
         strategy = st.radio(
             "Select strategy",
@@ -151,6 +154,36 @@ def render_sidebar(get_collection_stats, config):
             help="How many document chunks to retrieve per query. More = more context but slower."
         )
 
+        enable_rewrite = st.checkbox(
+            "Enable Conversational Rewriting",
+            value=True,
+            help="Uses an LLM to rewrite ambiguous follow-ups into standalone queries."
+        )
+
+        enable_expansion = st.checkbox(
+            "Enable Query Expansion",
+            value=False,
+            help="Uses an LLM to generate synonyms before searching. Boosts BM25 recall but adds latency."
+        )
+
+        enable_correction = st.checkbox(
+            "Enable Self-Correcting RAG",
+            value=False,
+            help="LLM evaluates its own answer before showing it. Fallback on failure."
+        )
+        
+        enable_cache = st.checkbox(
+            "Enable Response Caching",
+            value=True,
+            help="Caches answers to identical queries to instantly return results without hitting the LLM."
+        )
+        
+        enable_guardrails = st.checkbox(
+            "Enable Guardrails",
+            value=True,
+            help="Blocks prompt injections on input and toxic content on output."
+        )
+
         st.divider()
 
         if st.button("🗑️ Clear conversation", use_container_width=True):
@@ -164,7 +197,8 @@ def render_sidebar(get_collection_stats, config):
 
         with st.expander("📚 Phase 3 Features"):
             st.markdown("""
-**Phase 3 (Step 1)**
+**Phase 3**
+- **Query Expansion**: LLM synonym generation
 - **Configurable strategy**: dense / bm25 / hybrid / hybrid+rerank
 - **Per-step latency**: see retrieval vs generation time separately
 - **Experiment harness**: `python experiments/hybrid_vs_dense.py`
@@ -175,7 +209,7 @@ def render_sidebar(get_collection_stats, config):
 - Semantic chunking + Incremental ingest + OCR
             """)
 
-    return top_k, strategy
+    return top_k, strategy, enable_rewrite, enable_expansion, enable_correction, enable_cache, enable_guardrails
 
 
 def init_session_state():
@@ -264,9 +298,13 @@ def render_sources_and_context(retrieved_chunks: list):
 
 def main():
     retrieve_with_timing, generate_answer_stream, get_collection_stats, config, rewrite_query = _import_modules()
+    from src.query.expansion import expand_query
+    from src.generator import generate_answer_with_correction
+    from src.cache import get_cached_answer, set_cached_answer
+    from src.guardrails import check_input, check_output
 
     init_session_state()
-    top_k, strategy = render_sidebar(get_collection_stats, config)
+    top_k, strategy, enable_rewrite, enable_expansion, enable_correction, enable_cache, enable_guardrails = render_sidebar(get_collection_stats, config)
 
     st.title("🔍 RAGForge")
     st.caption(
@@ -283,7 +321,10 @@ def main():
                 "- **Dense** — semantic vector search baseline\n"
                 "- **BM25** — keyword search baseline\n"
                 "- **Hybrid** — best of both worlds via RRF\n"
-                "- **Hybrid + Reranker** — highest accuracy, most compute\n\n"
+                "- **Hybrid + Reranker** — highest accuracy, most compute\n"
+                "- **Multi-Query** — generates variations to defeat vocabulary mismatch\n"
+                "- **HyDE** — hallucinates a perfect answer to embed for semantic recall\n"
+                "- **Graph-Augmented** — uses offline-extracted entities for guaranteed recall\n\n"
                 "Ask anything about your documents! 🎯"
             )
 
@@ -294,19 +335,27 @@ def main():
             st.warning("Please enter a question.")
             st.stop()
 
-        # Phase 2: Query Rewriting and Normalization
+        # Phase 3: Configurable Query Transformation
         with st.spinner("🔄 Understanding question..."):
-            from src.query_rewriter import normalize_query
+            from src.query.rewrite import normalize_query
             
-            # First, resolve any conversational follow-up references
-            rewritten_query = rewrite_query(
-                user_query, 
-                st.session_state.messages, 
-                max_turns=config.CONVERSATION_HISTORY_TURNS
-            )
+            rewritten_query = user_query
             
-            # Then fix any typos so embedding works reliably
-            final_query = normalize_query(rewritten_query)
+            # 1. Conversational Rewrite
+            if enable_rewrite:
+                rewritten_query = rewrite_query(
+                    user_query, 
+                    st.session_state.messages, 
+                    max_turns=config.CONVERSATION_HISTORY_TURNS
+                )
+            
+            # 2. Spellcheck (always on, it's fast and critical)
+            spellchecked_query = normalize_query(rewritten_query)
+            
+            # 3. Query Expansion
+            final_query = spellchecked_query
+            if enable_expansion:
+                final_query = expand_query(spellchecked_query)
 
         user_msg_index = len(st.session_state.messages)
         st.session_state.messages.append({"role": "user", "content": user_query})
@@ -314,49 +363,100 @@ def main():
 
         with st.chat_message("user"):
             st.markdown(user_query)
-            if final_query != user_query:
-                st.caption(f"🔄 Rewritten: *{final_query}*")
+
+        # ── Input Guardrail ──────────────────────────────────────────────
+        if enable_guardrails:
+            is_safe, error_msg = check_input(user_query)
+            if not is_safe:
+                with st.chat_message("assistant"):
+                    st.error(error_msg)
+                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+                st.stop()
 
         with st.chat_message("assistant"):
-            retrieved_chunks = []
-            retrieval_ms = 0
-            generation_ms = 0
-            answer = None
-
-            # ── Retrieve ──────────────────────────────────────────────────────
-            with st.spinner(f"🔍 Searching documents [{strategy}]..."):
-                try:
-                    retrieved_chunks, retrieval_meta = retrieve_with_timing(
-                        final_query, top_k=top_k, strategy=strategy
-                    )
-                    retrieval_ms = retrieval_meta["total_ms"]
-                except RuntimeError as e:
-                    answer = f"❌ Retrieval error: {e}\n\nMake sure you've run ingestion: `python -m src.ingest`"
-                except ValueError as e:
-                    answer = f"⚠️ {e}"
-
-            # ── Generate (streamed) ──────────────────────────────────────────
-            if answer is None:
-                try:
-                    t1 = time.perf_counter()
-                    # Phase 2: pass history to the generator (exclude the current message)
-                    stream = generate_answer_stream(
-                        final_query, 
-                        retrieved_chunks, 
-                        conversation_history=st.session_state.messages[:-1]
-                    )
-                    answer = st.write_stream(stream)
-                    generation_ms = round((time.perf_counter() - t1) * 1000)
-                except ValueError as e:
-                    answer = (
-                        f"❌ Configuration error: {e}\n\n"
-                        "Add your API key to `.env`:\n```\nLLM_API_KEY=your_key_here\n```"
-                    )
-                    st.markdown(answer)
-                except RuntimeError as e:
-                    answer = f"❌ Generation error: {e}"
-                    st.markdown(answer)
+              # ── Cache Check ──────────────────────────────────────────────────
+            cached_ans = None
+            if enable_cache:
+                # We check cache against the original query to bypass all transformation latency
+                cached_ans = get_cached_answer(user_query, strategy)
+                
+            if cached_ans:
+                st.info("⚡ *Loaded instantly from semantic cache*")
+                retrieval_ms = 0
+                generation_ms = 0
+                retrieved_chunks = []
+                
+                st.markdown(cached_ans)
+                answer = cached_ans
             else:
+                # ── Rewrite & Expand ─────────────────────────────────────────────
+                with st.spinner("Rewriting query..."):
+                    from src.query.rewrite import normalize_query
+                    final_query = user_query
+                    
+                    if enable_rewrite:
+                        final_query = rewrite_query(user_query, st.session_state.messages[:-1])
+                    
+                    # 2. Spellcheck
+                    final_query = normalize_query(final_query)
+                    
+                    # 3. Query Expansion
+                    if enable_expansion:
+                        final_query = expand_query(final_query)
+                        
+                    if final_query != user_query:
+                        st.caption(f"🔄 Transformed: *{final_query}*")
+                
+                # ── Retrieve ──────────────────────────────────────────────────────
+                with st.spinner(f"🔍 Searching documents [{strategy}]..."):
+                    try:
+                        retrieved_chunks, retrieval_meta = retrieve_with_timing(
+                            final_query, top_k=top_k, strategy=strategy
+                        )
+                        retrieval_ms = retrieval_meta["total_ms"]
+                    except RuntimeError as e:
+                        answer = f"❌ Retrieval error: {e}"
+                        st.markdown(answer)
+                        st.stop()
+
+                # ── Generate (streamed) ──────────────────────────────────────────
+                with st.spinner("🤖 Writing answer..."):
+                    t0 = time.perf_counter()
+                    try:
+                        if enable_correction:
+                            answer_stream = generate_answer_with_correction(
+                                final_query, retrieved_chunks, st.session_state.messages[:-1]
+                            )
+                        else:
+                            answer_stream = generate_answer_stream(
+                                final_query, retrieved_chunks, st.session_state.messages[:-1]
+                            )
+                            
+                        answer = st.write_stream(answer_stream)
+                        generation_ms = round((time.perf_counter() - t0) * 1000)
+                        
+                        # Output Guardrail
+                        if enable_guardrails and answer and not answer.startswith("❌"):
+                            is_safe, error_msg = check_output(answer)
+                            if not is_safe:
+                                # We already streamed the text, so we just show an error below it.
+                                # In a real non-streaming system we'd block the whole text.
+                                st.error(error_msg)
+                                answer = f"❌ {error_msg}"
+                        
+                        # Cache the result if streaming succeeded
+                        if enable_cache and answer and not answer.startswith("❌"):
+                            set_cached_answer(user_query, strategy, answer)
+                            
+                    except ValueError as e:
+                        answer = (
+                            f"❌ Configuration error: {e}\n\n"
+                            "Add your API key to `.env`:\n```\nLLM_API_KEY=your_key_here\n```"
+                        )
+                        st.markdown(answer)
+                    except RuntimeError as e:
+                        answer = f"❌ Generation error: {e}"
+                        st.markdown(answer)
                 st.markdown(answer)
 
             # ── Sources + context (only if we actually got chunks) ───────────

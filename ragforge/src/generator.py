@@ -30,6 +30,8 @@ Phase 1 items preserved:
 
 import logging
 from typing import Dict, Iterator, List, Any, Optional
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from google.api_core.exceptions import ResourceExhausted
 
 from src.config import config
 
@@ -77,6 +79,27 @@ Current question:
 {question}
 
 Answer:"""
+
+EVALUATOR_PROMPT = """You are a critical reviewer evaluating a RAG (Retrieval-Augmented Generation) system.
+Look at the user's question, the retrieved context, and the drafted answer.
+Does the answer fully and accurately address the user's question using ONLY the provided context?
+
+Rules:
+- If the drafted answer hallucinates (uses information not in the context), output 'NO'.
+- If the drafted answer is completely unrelated to the user's query, output 'NO'.
+- If the drafted answer is correct but says "I don't have enough information" and you agree there is NO information, output 'YES' (it correctly admitted failure).
+- Output exactly 'YES' or 'NO', followed by a one-sentence justification.
+
+Context:
+{context}
+
+Question:
+{question}
+
+Drafted Answer:
+{draft}
+
+Evaluation (YES/NO):"""
 
 
 def _format_history(
@@ -174,6 +197,12 @@ def _get_client():
 
 # ── Generation functions ──────────────────────────────────────────────────────
 
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type(Exception), # Catch all since google-genai throws generic exceptions for 429
+    before_sleep=lambda retry_state: logger.warning(f"Rate limited. Retrying in {retry_state.next_action.sleep}s...")
+)
 def generate_answer(
     query: str,
     retrieved_chunks: List[Dict[str, Any]],
@@ -214,16 +243,22 @@ def generate_answer_stream(
     logger.info(f"Prompt length: {len(prompt)} characters")
 
     def _iterate():
-        try:
-            # Import locally to avoid issues
+        @retry(
+            stop=stop_after_attempt(5),
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            retry=retry_if_exception_type(Exception)
+        )
+        def _get_stream():
             from google import genai
             client = genai.Client(api_key=config.LLM_API_KEY)
-            
-            logger.info(f"Calling Gemini API (streaming, model: {config.LLM_MODEL})...")
-            stream = client.models.generate_content_stream(
+            return client.models.generate_content_stream(
                 model=config.LLM_MODEL,
                 contents=prompt,
             )
+            
+        try:
+            logger.info(f"Calling Gemini API (streaming, model: {config.LLM_MODEL})...")
+            stream = _get_stream()
             
             for event in stream:
                 if getattr(event, "text", None):
@@ -234,6 +269,60 @@ def generate_answer_stream(
             yield f"\n\n⚠️ *Response cut off — stream error: {e}*"
 
     return _iterate()
+
+
+def generate_answer_with_correction(
+    query: str,
+    retrieved_chunks: List[Dict[str, Any]],
+    conversation_history: Optional[List[Dict[str, str]]] = None,
+) -> Iterator[str]:
+    """
+    Self-Correcting RAG:
+    1. Generates a draft answer (non-streaming, hidden from user).
+    2. Evaluates its own draft.
+    3. If YES, yields the draft. If NO, yields a fallback message.
+    Yields status updates along the way so the UI isn't completely dead.
+    """
+    _require_api_key()
+    
+    yield "🔄 *Drafting initial answer...*\n\n"
+    
+    try:
+        # We must generate non-streaming to evaluate it
+        draft_answer = generate_answer(query, retrieved_chunks, conversation_history)
+        
+        yield "🧐 *Self-evaluating answer quality...*\n\n"
+        
+        # Build evaluator prompt
+        context_parts = []
+        for i, chunk in enumerate(retrieved_chunks, start=1):
+            context_parts.append(f"[Source {i}]\n{chunk.get('text', '')}")
+        context_text = "\n\n".join(context_parts)
+        
+        eval_prompt = EVALUATOR_PROMPT.format(
+            context=context_text,
+            question=query.strip(),
+            draft=draft_answer.strip()
+        )
+        
+        from google import genai
+        client = genai.Client(api_key=config.LLM_API_KEY)
+        response = client.models.generate_content(
+            model=config.LLM_MODEL,
+            contents=eval_prompt,
+        )
+        eval_result = response.text.strip().upper()
+        
+        if eval_result.startswith("YES"):
+            yield "✅ *Evaluation passed.*\n\n---\n\n"
+            yield draft_answer
+        else:
+            yield "❌ *Evaluation failed.*\n\n"
+            yield f"**Draft was:**\n{draft_answer}\n\n**Critique:**\n{eval_result}\n\n"
+            yield "---\n\n*Sorry, I couldn't generate a confident answer based on the provided context.*"
+            
+    except Exception as e:
+        yield f"\n\n⚠️ *Self-correction pipeline failed: {e}*"
 
 
 if __name__ == "__main__":

@@ -59,7 +59,7 @@ logger = logging.getLogger("RAGForge.Retriever")
 
 # Type alias for clarity
 RetrievalResult = Dict[str, Any]
-Strategy = Literal["dense", "bm25", "hybrid", "hybrid_rerank"]
+Strategy = Literal["dense", "bm25", "hybrid", "hybrid_rerank", "multi_query", "hyde", "graph_augmented"]
 
 
 # ── Reciprocal Rank Fusion ────────────────────────────────────────────────────
@@ -217,6 +217,9 @@ def retrieve(
         "bm25"          → Fast baseline. Use when queries contain exact keywords.
         "hybrid"        → Best of both worlds, no reranking overhead.
         "hybrid_rerank" → Highest accuracy. Adds ~50-200ms CrossEncoder cost.
+        "multi_query"   → LLM generates alternative queries, aggregates, then reranks.
+        "hyde"          → LLM generates a fake perfect answer, embeds it, retrieves, then reranks.
+        "graph_augmented" → Extracts entities, fetches exact matches, merges with dense, then reranks.
 
     Returns
     -------
@@ -284,9 +287,54 @@ def retrieve(
 
         return final
 
-    raise ValueError(
-        f"Unknown strategy '{strategy}'. "
-        "Choose from: dense, bm25, hybrid, hybrid_rerank"
+    # ── HyDE (Hypothetical Document Embeddings) ──────────────────────────────
+    if strategy == "hyde":
+        from src.query.hyde import generate_hypothetical_document
+        from src.reranker import rerank_chunks
+
+        # 1. Generate fake document
+        fake_doc = generate_hypothetical_document(query)
+        
+        # 2. Retrieve using hybrid (dense + bm25) against the fake document
+        # We use a larger candidate pool since we're using a hallucinated document
+        d_res, _ = search_dense(fake_doc, candidates * 2)
+        try:
+            b_res, _ = search_bm25(fake_doc, candidates * 2)
+        except Exception:
+            b_res = []
+            
+        fused = reciprocal_rank_fusion([d_res, b_res], k=config.RRF_K)
+        
+        # 3. Rerank against the ORIGINAL query
+        final_results = rerank_chunks(query, fused[:config.RERANK_CANDIDATES], top_k)
+        return final_results
+
+    # ── Graph-Augmented Dense (Entity Lookup + Dense) ────────────────────────
+    if strategy == "graph_augmented":
+        from src.query.graph_retriever import get_graph_chunks
+        from src.reranker import rerank_chunks
+        
+        # 1. Get graph chunks (exact entity matches)
+        graph_chunks = get_graph_chunks(query)
+        
+        # 2. Get dense chunks (semantic matches)
+        dense_chunks, _ = search_dense(query, candidates)
+        
+        # 3. Merge and deduplicate
+        all_chunks = {}
+        for chunk in graph_chunks + dense_chunks:
+            chunk_id = hash(chunk["text"])
+            if chunk_id not in all_chunks:
+                all_chunks[chunk_id] = chunk
+                
+        merged = list(all_chunks.values())
+        
+        # 4. Rerank final pool
+        final_results = rerank_chunks(query, merged, top_k)
+        return final_results
+
+    raise ValueError(f"Unknown retrieval strategy: {strategy}. "
+        "Choose from: dense, bm25, hybrid, hybrid_rerank, multi_query, hyde, graph_augmented"
     )
 
 

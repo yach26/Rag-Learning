@@ -43,7 +43,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.retriever import retrieve_with_timing
-from src.query_rewriter import normalize_query
+from src.query.rewrite import normalize_query
 
 
 # ── Strategies to benchmark (in display order) ───────────────────────────────
