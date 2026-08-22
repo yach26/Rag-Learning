@@ -27,7 +27,11 @@ logger = logging.getLogger("RAGForge.HashStore")
 
 
 def md5_file(path: Path) -> str:
-    """Return the MD5 hex digest of a file, reading in 64 KB blocks."""
+    """
+    Return the MD5 hex digest of a file, reading in 64 KB blocks.
+    Note: MD5 is used intentionally here for fast change detection, 
+    not for cryptographic security.
+    """
     h = hashlib.md5()
     with path.open("rb") as f:
         while True:

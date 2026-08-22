@@ -83,11 +83,11 @@ class Config:
     # ── LLM / Generation ────────────────────────────────────────────────────
     LLM_API_KEY: str = os.getenv("LLM_API_KEY", "")
 
-    # gemini-3.6-flash: strongest Flash-tier reasoning, ~304 tok/s output.
-    # gemini-3.5-flash-lite: noticeably cheaper & lower-latency if you want
+    # gemini-2.0-flash: strong reasoning, fast output.
+    # gemini-2.0-flash-lite: noticeably cheaper & lower-latency if you want
     #   snappier answers for a simple Q&A tool and don't need the extra
     #   reasoning headroom. Swap via LLM_MODEL in your .env — no code change.
-    LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini-3.6-flash")
+    LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini-2.0-flash")
 
     # Stream tokens to the UI as they're generated instead of waiting for
     # the full response. Doesn't reduce total latency much, but removes the

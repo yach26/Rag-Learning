@@ -60,7 +60,8 @@ The foundational system teaches the core components:
 
 ### Phase 2: Advanced Production Features
 Phase 2 upgrades the basic pipeline to solve real-world retrieval failures:
-1. **Hybrid Search (Vector + BM25)**: Combines semantic search with exact keyword matching using Reciprocal Rank Fusion (RRF).
+1. **Hybrid Search (Vector + BM25)**: Combines semantic search with exact keyword matching using Reciprocal Rank Fusion (RRF). 
+   *(Note: The BM25 index is built in-memory every session. This is fine for a learning project, but won't scale past a single-process deployment.)*
 2. **CrossEncoder Reranking**: Re-scores hybrid candidates (`cross-encoder/ms-marco-MiniLM-L-6-v2`) to push the most relevant chunks to position #1.
 3. **Conversation-Aware Retrieval**: Uses an LLM to rewrite follow-up questions ("what about the second one?") into standalone, context-independent queries.
 4. **Semantic Chunking**: Splits text recursively at natural boundaries (paragraphs → sentences) instead of arbitrary characters.

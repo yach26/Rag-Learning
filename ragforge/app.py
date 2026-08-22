@@ -296,11 +296,11 @@ def main():
             if answer is None:
                 try:
                     t1 = time.perf_counter()
-                    # Phase 2: pass history to the generator
+                    # Phase 2: pass history to the generator (exclude the current message)
                     stream = generate_answer_stream(
                         final_query, 
                         retrieved_chunks, 
-                        conversation_history=st.session_state.messages
+                        conversation_history=st.session_state.messages[:-1]
                     )
                     answer = st.write_stream(stream)
                     generation_ms = round((time.perf_counter() - t1) * 1000)
