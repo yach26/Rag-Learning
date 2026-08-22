@@ -3,6 +3,9 @@
 
 # ─── Vector DB (generated, do not commit) ──────
 chroma_db/
+data/query_cache.json
+data/documents/*
+!data/documents/.gitkeep
 
 # ─── Python cache ──────────────────────────────
 __pycache__/
