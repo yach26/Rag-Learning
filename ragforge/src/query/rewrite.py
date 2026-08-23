@@ -140,24 +140,30 @@ def normalize_query(raw_query: str) -> str:
     """
     Local spellcheck to fix typos before embedding.
     Small embedding models (like all-MiniLM-L6-v2) fail on misspelled queries.
-    This fixes word-level typos instantly and for free.
+    This fixes word-level typos instantly and for free while protecting acronyms.
     """
     try:
         from spellchecker import SpellChecker
         spell = SpellChecker()
         
-        # Add common tech terms to prevent catastrophic query drift
-        spell.word_frequency.load_words([
+        # Add common tech, networking, and CS terms to prevent query corruption
+        tech_words = [
             'cyber', 'cybersecurity', 'rag', 'llm', 'api', 'json', 
             'yaml', 'python', 'github', 'openai', 'gemini', 'groq',
-            'app', 'repo', 'dev', 'ops', 'devops', 'sql', 'nosql'
-        ])
+            'app', 'repo', 'dev', 'ops', 'devops', 'sql', 'nosql',
+            'osi', 'tcp', 'ip', 'http', 'https', 'dns', 'udp', 'mac',
+            'lan', 'wan', 'icmp', 'smtp', 'ftp', 'ssh', 'ssl', 'tls'
+        ]
+        spell.word_frequency.load_words(tech_words)
         
-        # Split by whitespace, keeping punctuation attached if possible, 
-        # or use a simple regex to extract words to check.
-        # pyspellchecker works best on raw words.
         words = re.findall(r"\b\w+\b", raw_query)
-        misspelled = spell.unknown(words)
+        # Exclude uppercase acronyms (e.g. OSI, TCP, RAG) and tech words from spellcheck
+        words_to_check = [
+            w for w in words 
+            if not (w.isupper() and 2 <= len(w) <= 5) and w.lower() not in tech_words
+        ]
+        
+        misspelled = spell.unknown(words_to_check)
         
         if not misspelled:
             return raw_query
@@ -165,11 +171,8 @@ def normalize_query(raw_query: str) -> str:
         cleaned_query = raw_query
         for word in misspelled:
             correction = spell.correction(word)
-            if correction and correction != word:
-                # Replace the misspelled word in the original query, 
-                # taking care with case and boundaries.
-                # A simple case-insensitive regex replace for the whole word:
-                pattern = re.compile(r"\b" + re.escape(word) + r"\b", re.IGNORECASE)
+            if correction and correction.lower() != word.lower():
+                pattern = re.compile(r"\b" + re.escape(word) + r"\b")
                 cleaned_query = pattern.sub(correction, cleaned_query)
                 
         if cleaned_query != raw_query:

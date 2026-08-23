@@ -8,6 +8,7 @@ Run with:
 """
 
 import html
+import re
 import time
 from pathlib import Path
 import streamlit as st
@@ -327,13 +328,13 @@ def render_sidebar(get_collection_stats, clear_collection, invalidate_index, cle
                     '<span class="status-pill status-warn">Index Empty</span>',
                     unsafe_allow_html=True,
                 )
-                st.caption("No documents indexed. Run ingestion or upload files below.")
+                st.caption("No documents indexed. Upload files below or run ingestion.")
             else:
                 st.markdown(
                     f'<span class="status-pill status-ok">{chunk_count:,} Chunks Indexed</span>',
                     unsafe_allow_html=True,
                 )
-                st.caption(f"Collection: `{stats['collection_name']}`")
+                st.caption("Persistent disk store (`ragforge/chroma_db`). Retains vectors across app restarts.")
         except Exception as e:
             st.error(f"Store state unavailable: {e}")
 
@@ -405,6 +406,12 @@ def render_sidebar(get_collection_stats, clear_collection, invalidate_index, cle
                 else:
                     st.warning("Upload at least one file.")
 
+            delete_source_files = st.checkbox(
+                "Also delete document files from disk",
+                value=False,
+                help="Check this to remove raw document files from data/documents/",
+            )
+
             if st.button("Purge Vector Store", use_container_width=True):
                 try:
                     clear_collection()
@@ -418,7 +425,12 @@ def render_sidebar(get_collection_stats, clear_collection, invalidate_index, cle
                     if graph_path.exists():
                         graph_path.unlink()
 
-                    st.success("Database purged.")
+                    if delete_source_files and config.DOCUMENTS_DIR.exists():
+                        for f in config.DOCUMENTS_DIR.iterdir():
+                            if f.is_file() and f.name != ".gitkeep":
+                                f.unlink()
+
+                    st.success("Database purged successfully.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Purge error: {e}")
@@ -483,10 +495,163 @@ def init_session_state():
         st.session_state.strategy = "hybrid_rerank"
 
 
+def sanitize_mermaid_code(code: str) -> str:
+    """Pre-process Mermaid diagram code to fix common LLM syntax errors."""
+    if not code:
+        return code
+
+    # Normalize non-standard Unicode hyphens, dashes, and smart quotes per line
+    # so they don't break word-boundary anchors later
+    replacements = [
+        ("\u2011", "-"),  # non-breaking hyphen
+        ("\u2013", "-"),  # en dash
+        ("\u2014", "-"),  # em dash
+        ("\u201c", '"'),  # left double quote
+        ("\u201d", '"'),  # right double quote
+        ("\u2018", "'"),  # left single quote
+        ("\u2019", "'"),  # right single quote
+    ]
+    for bad, good in replacements:
+        code = code.replace(bad, good)
+
+    # Quote any unquoted bracket label that contains parentheses.
+    # Matches: ID[some text (with parens) more text]  -->  ID["some text (with parens) more text"]
+    # The node ID can be any non-whitespace chars up to the '['.
+    # We skip labels that are already quoted (start with ").
+    def _quote_label(m: re.Match) -> str:
+        node_id = m.group(1)
+        label = m.group(2)
+        return f'{node_id}["{label}"]'
+
+    code = re.sub(
+        r'([A-Za-z0-9_][A-Za-z0-9_-]*)\[([^"\]\n]*\([^"\]\n]*\)[^"\]\n]*)\]',
+        _quote_label,
+        code,
+    )
+    return code
+
+
+def render_mermaid_chart(code: str):
+    code = sanitize_mermaid_code(code.strip())
+    if not code:
+        return
+
+    if hasattr(st, "mermaid_chart"):
+        try:
+            st.mermaid_chart(code)
+            return
+        except Exception:
+            pass
+
+    # Safely format JS string template literal
+    js_code = code.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
+
+    mermaid_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+        <style>
+            body {{
+                margin: 0;
+                padding: 0;
+                background-color: #1e1e20;
+                color: #e3e3e3;
+                font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            }}
+            .mermaid-container {{
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                padding: 16px;
+                background-color: #1e1e20;
+                border: 1px solid #333538;
+                border-radius: 8px;
+                box-sizing: border-box;
+                min-height: 140px;
+            }}
+            #graphDiv {{
+                width: 100%;
+                display: flex;
+                justify-content: center;
+            }}
+            svg {{
+                max-width: 100% !important;
+                height: auto !important;
+            }}
+            .error-box {{
+                color: #f2b8b5;
+                font-size: 0.82rem;
+                font-family: monospace;
+                padding: 10px;
+                white-space: pre-wrap;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="mermaid-container">
+            <div id="graphDiv">Rendering diagram...</div>
+        </div>
+        <script>
+            (function() {{
+                try {{
+                    mermaid.initialize({{
+                        startOnLoad: false,
+                        theme: 'dark',
+                        securityLevel: 'loose'
+                    }});
+                    const rawCode = `{js_code}`;
+                    const id = 'mermaid_' + Math.random().toString(36).substring(2, 7);
+                    mermaid.render(id, rawCode)
+                        .then(function(result) {{
+                            document.getElementById('graphDiv').innerHTML = result.svg;
+                        }})
+                        .catch(function(err) {{
+                            console.error("Mermaid render error:", err);
+                            document.getElementById('graphDiv').innerHTML = 
+                                '<div class="error-box">Diagram Render Note:<br>' + (err.str || err.message || err) + '</div>';
+                        }});
+                }} catch (e) {{
+                    console.error("Mermaid init error:", e);
+                    document.getElementById('graphDiv').innerHTML = 
+                        '<div class="error-box">Diagram Init Error:<br>' + e.message + '</div>';
+                }}
+            }})();
+        </script>
+    </body>
+    </html>
+    """
+    st.components.v1.html(mermaid_html, height=420, scrolling=True)
+
+
+def render_message_content(content: str):
+    if not content:
+        return
+
+    pattern = r"(```\s*mermaid[\s\S]*?```)"
+    if not re.search(pattern, content, re.IGNORECASE):
+        st.markdown(content)
+        return
+
+    parts = re.split(pattern, content, flags=re.IGNORECASE)
+    for part in parts:
+        if not part:
+            continue
+        if re.match(r"^```\s*mermaid", part, re.IGNORECASE):
+            match = re.search(r"```\s*mermaid\s*\n?([\s\S]*?)\n?```", part, re.IGNORECASE)
+            if match:
+                render_mermaid_chart(match.group(1).strip())
+            else:
+                st.markdown(part)
+        else:
+            st.markdown(part)
+
+
 def render_chat_history():
     for i, message in enumerate(st.session_state.messages):
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+            render_message_content(message["content"])
 
             if message["role"] == "user" and i in st.session_state.rewritten_queries:
                 rewritten = st.session_state.rewritten_queries[i]
@@ -688,7 +853,9 @@ def main():
                                     final_query, retrieved_chunks, st.session_state.messages[:-1]
                                 )
 
-                            answer = st.write_stream(answer_stream)
+                            stream_container = st.empty()
+                            with stream_container:
+                                answer = st.write_stream(answer_stream)
                             generation_ms = round((time.perf_counter() - t0) * 1000)
 
                             if enable_guardrails and answer and not answer.startswith("Configuration error"):
@@ -699,6 +866,11 @@ def main():
 
                             if enable_cache and answer and not answer.lower().startswith("configuration error"):
                                 set_cached_answer(user_query, strategy, answer)
+
+                            # Re-render using render_message_content so Mermaid blocks
+                            # are replaced with the actual rendered diagram.
+                            stream_container.empty()
+                            render_message_content(answer)
 
                         except ValueError as e:
                             answer = (
@@ -719,15 +891,16 @@ def main():
                             "generation_ms": generation_ms,
                         })
 
-        msg_index = len(st.session_state.messages)
-        st.session_state.messages.append({"role": "assistant", "content": answer})
-        st.session_state.retrieval_data[msg_index] = retrieved_chunks
-        if retrieved_chunks and generation_ms is not None:
-            st.session_state.timing_data[msg_index] = {
-                "strategy": strategy,
-                "retrieval_ms": retrieval_ms,
-                "generation_ms": generation_ms,
-            }
+        if answer:
+            msg_index = len(st.session_state.messages)
+            st.session_state.messages.append({"role": "assistant", "content": answer})
+            st.session_state.retrieval_data[msg_index] = retrieved_chunks
+            if retrieved_chunks and generation_ms is not None:
+                st.session_state.timing_data[msg_index] = {
+                    "strategy": strategy,
+                    "retrieval_ms": retrieval_ms,
+                    "generation_ms": generation_ms,
+                }
 
 
 if __name__ == "__main__":

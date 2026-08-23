@@ -44,9 +44,9 @@ class Config:
     CHUNK_OVERLAP: int = 200     # characters
 
     # ── Retrieval ────────────────────────────────────────────────────────────
-    # Default top_k. Kept modest on purpose: smaller prompt -> faster answer.
-    TOP_K: int = 4
-    TOP_K_MAX: int = 8           # UI slider ceiling
+    # Default top_k. Increased to 8 to handle multi-page summary questions.
+    TOP_K: int = 8
+    TOP_K_MAX: int = 25          # UI slider ceiling
 
     # Phase 2: Hybrid search — fetch this many candidates from each ranker
     # before merging with Reciprocal Rank Fusion, then reranking.

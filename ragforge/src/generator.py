@@ -50,6 +50,7 @@ IMPORTANT RULES:
 4. Be concise and direct. Quote specific details from the context when helpful.
 5. If the context only partially answers the question, share what is available and note what is missing.
 6. **FORMATTING**: Always structure your answer beautifully using Markdown (bullet points, bold text, headers, and code blocks if applicable) to make it easy to read.
+7. **DIAGRAMS & FLOWCHARTS**: If the user asks for a flowchart, sequence diagram, workflow, steps, process, or architecture, emit a valid ```mermaid code block. Always enclose node label text in double quotes inside brackets, e.g., A["Label text with (parentheses)"] --> B["Another label"]. Never put unquoted parentheses () directly inside brackets [].
 
 Context:
 {context}
@@ -70,6 +71,7 @@ IMPORTANT RULES:
 4. Be concise and direct. Quote specific details from the context when helpful.
 5. If the context only partially answers the question, share what is available and note what is missing.
 6. **FORMATTING**: Always structure your answer beautifully using Markdown (bullet points, bold text, headers, and code blocks if applicable) to make it easy to read.
+7. **DIAGRAMS & FLOWCHARTS**: If the user asks for a flowchart, sequence diagram, workflow, steps, process, or architecture, emit a valid ```mermaid code block. Always enclose node label text in double quotes inside brackets, e.g., A["Label text with (parentheses)"] --> B["Another label"]. Never put unquoted parentheses () directly inside brackets [].
 
 Context:
 {context}
