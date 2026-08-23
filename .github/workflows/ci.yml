@@ -28,4 +28,5 @@ jobs:
     - name: Run Tests
       run: |
         cd ragforge
-        pytest tests/
+        export PYTHONPATH="${PWD}"
+        pytest tests/ -q --tb=short
