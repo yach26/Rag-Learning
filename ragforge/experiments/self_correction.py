@@ -42,7 +42,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.retriever import retrieve_with_timing
 from src.query.rewrite import normalize_query
-from src.generator import generate_answer, EVALUATOR_PROMPT, _get_client
+from src.generator import generate_answer, EVALUATOR_PROMPT
+from src.llm import get_llm
 from src.config import config
 
 def load_qa_pairs(path: Path) -> List[Dict]:
@@ -72,12 +73,7 @@ def evaluate_draft(query: str, retrieved_chunks: List[Dict], draft: str) -> bool
     )
     
     try:
-        client = _get_client()
-        response = client.models.generate_content(
-            model=config.LLM_MODEL,
-            contents=eval_prompt,
-        )
-        return response.text.strip().upper().startswith("YES")
+        return get_llm().complete(eval_prompt).strip().upper().startswith("YES")
     except:
         return False
 

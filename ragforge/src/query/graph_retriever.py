@@ -17,7 +17,7 @@ from typing import List, Dict, Any
 
 from src.config import config
 from src.vector_store import _get_collection
-from src.generator import _get_client
+from src.llm import get_llm
 
 logger = logging.getLogger("RAGForge.GraphRetriever")
 
@@ -42,15 +42,8 @@ def get_graph_chunks(query: str) -> List[Dict[str, Any]]:
         return []
         
     try:
-        client = _get_client()
         prompt = _EXTRACT_QUERY_ENTITIES_PROMPT.format(query=query.strip())
-        
-        response = client.models.generate_content(
-            model=config.LLM_MODEL,
-            contents=prompt,
-        )
-        
-        output = response.text.strip()
+        output = get_llm().complete(prompt).strip()
         if output == "NONE":
             return []
             

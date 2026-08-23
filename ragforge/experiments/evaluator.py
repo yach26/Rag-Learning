@@ -26,7 +26,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.retriever import retrieve_with_timing
 from src.query.rewrite import normalize_query
-from src.generator import generate_answer, _get_client
+from src.generator import generate_answer
+from src.llm import get_llm
 from src.config import config
 
 _EVAL_PROMPT = """\
@@ -79,12 +80,7 @@ def grade_response(question: str, chunks: List[Dict], answer: str) -> Dict[str, 
     prompt = _EVAL_PROMPT.format(question=question, context=context_text, answer=answer)
     
     try:
-        client = _get_client()
-        response = client.models.generate_content(
-            model=config.LLM_MODEL,
-            contents=prompt,
-        )
-        output = response.text.strip()
+        output = get_llm().complete(prompt).strip()
         
         rel_match = re.search(r"RELEVANCE:\s*([1-5])", output, re.IGNORECASE)
         faith_match = re.search(r"FAITHFULNESS:\s*(YES|NO)", output, re.IGNORECASE)

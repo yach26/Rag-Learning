@@ -385,6 +385,7 @@ def render_sidebar(get_collection_stats, clear_collection, invalidate_index, cle
                 "Upload PDF, Markdown, or TXT",
                 type=["pdf", "md", "txt"],
                 accept_multiple_files=True,
+                help=f"Max {config.MAX_UPLOAD_BYTES // (1024 * 1024)} MB per file. PDFs with embedded JavaScript are rejected.",
             )
 
             if st.button("Process Documents", use_container_width=True):
@@ -392,9 +393,13 @@ def render_sidebar(get_collection_stats, clear_collection, invalidate_index, cle
                     try:
                         config.DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
                         with st.spinner("Saving documents..."):
+                            from src.validation import ValidationError, write_validated_upload
                             for uf in uploaded_files:
-                                dest = config.DOCUMENTS_DIR / uf.name
-                                dest.write_bytes(uf.getbuffer())
+                                write_validated_upload(
+                                    config.DOCUMENTS_DIR,
+                                    uf.name,
+                                    bytes(uf.getbuffer()),
+                                )
 
                         with st.spinner("Ingesting and indexing..."):
                             from src.ingest import run_ingestion_pipeline
@@ -721,6 +726,9 @@ def render_sources_and_context(retrieved_chunks: list):
 
 
 def main():
+    from src.factory import configure_logging
+    configure_logging()
+
     (
         retrieve_with_timing,
         generate_answer_stream,

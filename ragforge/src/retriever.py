@@ -104,7 +104,7 @@ def reciprocal_rank_fusion(
     for ranked in ranked_lists:
         for rank, chunk in enumerate(ranked, start=1):
             source = chunk.get("source", "unknown")
-            chunk_id = chunk.get("chunk_id", chunk.get("global_index", 0))
+            chunk_id = chunk.get("chunk_id", 0)
             uid = f"{source}__chunk_{chunk_id}"
 
             scores[uid] = scores.get(uid, 0.0) + 1.0 / (k + rank)
@@ -114,7 +114,7 @@ def reciprocal_rank_fusion(
     merged = sorted(
         chunks_by_id.values(),
         key=lambda c: scores[
-            f"{c.get('source', 'unknown')}__chunk_{c.get('chunk_id', c.get('global_index', 0))}"
+            f"{c.get('source', 'unknown')}__chunk_{c.get('chunk_id', 0)}"
         ],
         reverse=True,
     )
@@ -231,6 +231,8 @@ def retrieve(
         raise ValueError("Query cannot be empty.")
 
     query = user_query.strip()
+    from src.metrics import metrics
+    metrics.record_retrieval()
     logger.info(f"Retrieving top-{top_k} via strategy='{strategy}' for: '{query[:80]}'")
 
     candidates = config.HYBRID_CANDIDATES

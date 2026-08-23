@@ -57,21 +57,14 @@ def expand_query(query: str) -> str:
         return query
 
     try:
-        from src.generator import _get_client
-        client = _get_client()
+        from src.llm import get_llm
 
         prompt = (
             f"{_EXPANSION_SYSTEM_PROMPT}\n\n"
             f"User Query: {query.strip()}\n\n"
             f"Keywords:"
         )
-        
-        response = client.models.generate_content(
-            model=config.LLM_MODEL,
-            contents=prompt,
-        )
-        
-        keywords = response.text.strip().replace("\n", " ").replace(",", " ")
+        keywords = get_llm().complete(prompt).strip().replace("\n", " ").replace(",", " ")
         
         # Clean up multiple spaces
         keywords = " ".join(keywords.split())

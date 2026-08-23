@@ -202,12 +202,12 @@ def chunk_documents(
     """
     Chunk all documents and attach metadata to each chunk.
 
-    chunk_id is sequential across documents to maintain chunk indexing consistency.
-    local_chunk_id is LOCAL to each source file for per-file tracking.
+    chunk_id is LOCAL and sequential per source file. Combined with the
+    source name in vector_store._make_chunk_id(), IDs stay stable across
+    re-ingest even if other files are added or removed.
     """
     all_chunks: List[Chunk] = []
-    per_source_counter: Dict[str, int] = {}   # source filename -> next local chunk_id
-    global_index = 0
+    per_source_counter: Dict[str, int] = {}
 
     for doc in documents:
         text = doc["text"]
@@ -227,14 +227,11 @@ def chunk_documents(
                 "text": chunk_text_piece,
                 "metadata": {
                     **source_metadata,
-                    "chunk_id": global_index,        # Sequential global chunk_id
-                    "local_chunk_id": local_chunk_id, # Local to this file
-                    "global_index": global_index,     # Cosmetic display order
+                    "chunk_id": local_chunk_id,
                     "chunk_size": len(chunk_text_piece),
                 }
             }
             all_chunks.append(chunk)
-            global_index += 1
 
     return all_chunks
 
@@ -269,7 +266,7 @@ if __name__ == "__main__":
 
     print("\n── First 2 Chunks (Preview) ────────────────────────────")
     for chunk in chunks[:2]:
-        print(f"\nChunk ID (local) : {chunk['metadata']['chunk_id']}")
+        print(f"\nChunk ID         : {chunk['metadata']['chunk_id']}")
         print(f"Source           : {chunk['metadata']['source']}")
         print(f"Page             : {chunk['metadata']['page']}")
         print(f"Size             : {chunk['metadata']['chunk_size']} chars")

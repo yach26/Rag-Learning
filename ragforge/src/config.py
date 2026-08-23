@@ -1,20 +1,6 @@
 """
 src/config.py — Central configuration for RAGForge
 ====================================================
-
-CHANGES IN THIS REVISION (Phase 2)
--------------------------------------
-- HASH_STORE_PATH: path for incremental-ingestion MD5 hash map.
-- HYBRID_CANDIDATES / BM25_WEIGHT / RRF_K: hybrid BM25+vector search.
-- RERANKER_MODEL / RERANK_CANDIDATES / USE_RERANKER: CrossEncoder rerank.
-- USE_OCR_FALLBACK / OCR_DPI: pytesseract OCR for scanned PDF pages.
-- CONVERSATION_HISTORY_TURNS: how many prior turns to include in prompts
-  and pass to the query rewriter.
-
-Phase 1 changes kept:
-- STREAM_RESPONSES: stream Gemini tokens to UI.
-- TOP_K / TOP_K_MAX: retrieval depth defaults.
-- MAX_CHUNK_PREVIEW_CHARS: UI preview length.
 """
 
 import os
@@ -24,14 +10,28 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    return int(raw)
+
+
 class Config:
     # ── Paths ────────────────────────────────────────────────────────────────
     PROJECT_ROOT: Path = Path(__file__).parent.parent
     DOCUMENTS_DIR: Path = PROJECT_ROOT / "data" / "documents"
     CHROMA_DB_DIR: Path = PROJECT_ROOT / "chroma_db"
 
-    # Phase 2: Incremental ingestion hash store
     HASH_STORE_PATH: Path = PROJECT_ROOT / "data" / ".file_hashes.json"
+    BM25_INDEX_PATH: Path = PROJECT_ROOT / "data" / ".bm25_index.pkl"
 
     # ── ChromaDB ─────────────────────────────────────────────────────────────
     CHROMA_COLLECTION_NAME: str = "ragforge_documents"
@@ -83,11 +83,19 @@ class Config:
     # ── LLM / Generation ────────────────────────────────────────────────────
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 
-    # gemini-2.0-flash: strong reasoning, fast output.
-    # gemini-2.0-flash-lite: noticeably cheaper & lower-latency if you want
-    #   to test basic queries and don't need top-tier reasoning.
-    #   reasoning headroom. Swap via LLM_MODEL in your .env — no code change.
+    # Groq chat model ID (not Gemini). openai/gpt-oss-20b is Groq's
+    # documented default-class model as of 2026. Override with LLM_MODEL.
     LLM_MODEL: str = os.getenv("LLM_MODEL", "openai/gpt-oss-20b")
+
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    MAX_QUERY_CHARS: int = _env_int("MAX_QUERY_CHARS", 4000)
+    MAX_UPLOAD_BYTES: int = _env_int("MAX_UPLOAD_BYTES", 20 * 1024 * 1024)
+    MAX_PDF_PAGES: int = _env_int("MAX_PDF_PAGES", 200)
+    MAX_PDF_SCAN_BYTES: int = _env_int("MAX_PDF_SCAN_BYTES", 2 * 1024 * 1024)
+    USE_LLM_GUARDRAIL: bool = _env_bool("USE_LLM_GUARDRAIL", False)
+
+    API_AUTH_TOKEN: str = os.getenv("API_AUTH_TOKEN", "")
+    API_RATE_LIMIT_PER_MIN: int = _env_int("API_RATE_LIMIT_PER_MIN", 30)
 
     # Stream tokens to the UI as they're generated instead of waiting for
     # the full response. Doesn't reduce total latency much, but removes the

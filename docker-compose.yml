@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  ragforge:
+    build:
+      context: ./ragforge
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+      - "8501:8501"
+    volumes:
+      - ./ragforge/data:/app/data
+      - ./ragforge/chroma_db:/app/chroma_db
+    env_file:
+      - ./ragforge/.env

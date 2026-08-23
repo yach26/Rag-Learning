@@ -76,16 +76,20 @@ def is_hit(retrieved_chunks: list, expected_sources: list, expected_pages: list)
     return False, retrieved_info
 
 
-def run_eval(qa_file: Path, top_k: int) -> None:
+def run_eval(qa_file: Path, top_k: int, judge: bool = False, strategy: str = "hybrid_rerank") -> None:
     from src.retriever import retrieve
 
     pairs = load_qa_pairs(qa_file)
 
     print("=" * 65)
-    print(f"RAGForge — Retrieval Eval  |  top-k={top_k}  |  {len(pairs)} question(s)")
+    print(f"RAGForge — Retrieval Eval  |  strategy={strategy}  |  top-k={top_k}  |  {len(pairs)} question(s)")
     print("=" * 65)
 
     hits = 0
+    judged = 0
+    faithful = 0
+    relevance_scores = []
+
     for i, pair in enumerate(pairs, start=1):
         question = pair.get("question", "").strip()
         expected_sources = pair.get("expected_sources", [])
@@ -96,7 +100,7 @@ def run_eval(qa_file: Path, top_k: int) -> None:
             continue
 
         try:
-            retrieved = retrieve(question, top_k=top_k)
+            retrieved = retrieve(question, top_k=top_k, strategy=strategy)
         except Exception as e:
             print(f"  Q{i:02d}  [ERROR] Retrieval failed: {e}")
             continue
@@ -112,16 +116,43 @@ def run_eval(qa_file: Path, top_k: int) -> None:
         if hit:
             hits += 1
 
+        if judge:
+            try:
+                from src.generator import generate_answer
+                from experiments.evaluator import grade_response
+
+                answer = generate_answer(question, retrieved)
+                evaluation = grade_response(question, retrieved, answer)
+                judged += 1
+                relevance_scores.append(evaluation["relevance"])
+                if evaluation["faithfulness"]:
+                    faithful += 1
+                faith = "YES" if evaluation["faithfulness"] else "NO"
+                print(
+                    f"         → relevance={evaluation['relevance']}/5  "
+                    f"faithfulness={faith}"
+                )
+            except Exception as e:
+                print(f"         → [JUDGE ERROR] {e}")
+
     total = len(pairs)
     rate = (hits / total * 100) if total > 0 else 0.0
 
     print()
     print("─" * 65)
     print(f"  Hit rate @ k={top_k}: {hits}/{total}  ({rate:.1f}%)")
+    if judge and judged:
+        avg_rel = sum(relevance_scores) / len(relevance_scores)
+        faith_pct = (faithful / judged) * 100
+        print(f"  Avg context relevance: {avg_rel:.1f}/5")
+        print(f"  Answer faithfulness:   {faith_pct:.1f}% ({faithful}/{judged})")
+        from src.metrics import metrics
+        snap = metrics.snapshot()
+        print(
+            f"  Tokens / est. cost:    {snap['prompt_tokens']}+{snap['completion_tokens']} "
+            f"(${snap['estimated_cost_usd']:.4f})"
+        )
     print("─" * 65)
-    print()
-    print("Tip: run before/after each Phase 2 change to measure progress.")
-    print("     python eval/run_eval.py --top-k 4")
 
 
 def main():
@@ -140,13 +171,23 @@ def main():
         default=None,
         help="Number of chunks to retrieve per question (default: config.TOP_K)",
     )
+    parser.add_argument(
+        "--strategy",
+        type=str,
+        default="hybrid_rerank",
+        help="Retrieval strategy to evaluate",
+    )
+    parser.add_argument(
+        "--judge",
+        action="store_true",
+        help="Also run LLM-as-judge faithfulness / context relevance (uses Groq)",
+    )
     args = parser.parse_args()
 
-    # Late import so --help works without a ChromaDB connection
     from src.config import config
     top_k = args.top_k if args.top_k is not None else config.TOP_K
 
-    run_eval(args.qa_file, top_k)
+    run_eval(args.qa_file, top_k, judge=args.judge, strategy=args.strategy)
 
 
 if __name__ == "__main__":

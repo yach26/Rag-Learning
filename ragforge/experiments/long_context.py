@@ -2,7 +2,7 @@
 experiments/long_context.py — Step 8: Long Context vs RAG
 ===========================================================
 
-With massive context windows (e.g. Gemini 1.5 Pro's 2M tokens), is RAG
+With massive context windows (e.g. 1M+ token models), is RAG
 even necessary? Can we just dump the entire database into the prompt?
 
 This script answers that question by benchmarking:
@@ -37,7 +37,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.retriever import retrieve_with_timing
 from src.query.rewrite import normalize_query
-from src.generator import generate_answer, EVALUATOR_PROMPT, _get_client
+from src.generator import generate_answer
 from src.vector_store import _get_collection
 from src.config import config
 

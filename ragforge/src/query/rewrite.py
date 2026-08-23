@@ -11,7 +11,7 @@ chance of answering questions like:
     "How does it compare to what you said before?"
 
 Strategy:
-- Fast, cheap Gemini call (same model, short prompt, non-streaming).
+- Fast Groq call (same model, short prompt, non-streaming).
 - Heuristic fast-path: if the query looks fully self-contained (long
   enough, no obvious references), skip the API call entirely.
 - Complete fail-safe: any exception returns the original query
@@ -106,9 +106,8 @@ def rewrite_query(
         return user_query
 
     try:
-        from src.generator import _get_client
+        from src.llm import get_llm
 
-        client = _get_client()
         history_text = _format_history(recent_history)
         prompt = (
             f"{_REWRITE_SYSTEM_PROMPT}\n\n"
@@ -116,11 +115,7 @@ def rewrite_query(
             f"Follow-up question: {user_query.strip()}\n\n"
             f"Rewritten standalone question:"
         )
-        response = client.models.generate_content(
-            model=config.LLM_MODEL,
-            contents=prompt,
-        )
-        rewritten = response.text.strip()
+        rewritten = get_llm().complete(prompt).strip()
 
         # Sanity check: rewrite must not be empty
         if not rewritten:

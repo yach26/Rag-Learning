@@ -30,6 +30,13 @@ _client = None
 _collection = None
 
 
+def reset_client() -> None:
+    """Drop cached Chroma handles so tests can retarget collections."""
+    global _client, _collection
+    _client = None
+    _collection = None
+
+
 def _get_collection() -> chromadb.Collection:
     global _client, _collection
 

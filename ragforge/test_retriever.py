@@ -31,14 +31,14 @@ def isolated_collection(monkeypatch):
     autouse=True means this fixture runs before EVERY test in this file.
     After each test, the test collection is cleared.
     """
-    # Point to a different collection name for tests
     monkeypatch.setattr(config, "CHROMA_COLLECTION_NAME", "ragforge_test_collection")
+    from src.vector_store import reset_client
+    reset_client()
 
-    # Also use the same chroma_db directory (it's local) but a different collection
-    yield  # Run the test
+    yield
 
-    # Cleanup: clear the test collection after each test
     clear_collection()
+    reset_client()
 
 
 def _make_chunks(texts: List[str], source: str = "test.txt") -> List[dict]:

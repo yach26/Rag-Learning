@@ -205,6 +205,8 @@ LOADERS = {
 
 
 def load_single_file(file_path: Path) -> List[Document]:
+    from src.validation import ValidationError, validate_existing_file
+
     extension = file_path.suffix.lower()
 
     if extension not in LOADERS:
@@ -212,6 +214,11 @@ def load_single_file(file_path: Path) -> List[Document]:
             f"Unsupported file type '{extension}' for file '{file_path.name}'. "
             f"Supported types: {list(LOADERS.keys())}"
         )
+
+    try:
+        validate_existing_file(file_path)
+    except ValidationError as e:
+        raise ValueError(f"Rejected '{file_path.name}': {e}") from e
 
     return LOADERS[extension](file_path)
 

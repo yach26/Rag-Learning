@@ -43,17 +43,10 @@ def generate_hypothetical_document(query: str) -> str:
         return query
 
     try:
-        from src.generator import _get_client
-        client = _get_client()
+        from src.llm import get_llm
 
         prompt = _HYDE_PROMPT.format(query=query.strip())
-
-        response = client.models.generate_content(
-            model=config.LLM_MODEL,
-            contents=prompt,
-        )
-
-        fake_doc = response.text.strip()
+        fake_doc = get_llm().complete(prompt).strip()
         
         if not fake_doc:
             return query

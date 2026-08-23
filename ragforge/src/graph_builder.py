@@ -24,7 +24,7 @@ from tqdm import tqdm
 
 from src.config import config
 from src.vector_store import _get_collection
-from src.generator import _get_client
+from src.llm import get_llm
 
 # Setup logging for the script
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -65,8 +65,8 @@ def build_graph():
 
     logger.info(f"Extracting entities from {len(ids)} chunks...")
     
-    client = _get_client()
-    
+    llm = get_llm()
+
     # entity -> list of chunk_ids
     entity_graph = defaultdict(list)
     
@@ -88,12 +88,7 @@ def build_graph():
         prompt = _EXTRACT_ENTITIES_PROMPT.format(text=text)
         
         try:
-            response = client.models.generate_content(
-                model=config.LLM_MODEL,
-                contents=prompt,
-            )
-            
-            output = response.text.strip()
+            output = llm.complete(prompt).strip()
             if output == "NONE":
                 continue
                 

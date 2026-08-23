@@ -43,17 +43,10 @@ def generate_queries(original_query: str) -> List[str]:
     queries = [original_query.strip()]
 
     try:
-        from src.generator import _get_client
-        client = _get_client()
+        from src.llm import get_llm
 
         prompt = f"{_MULTI_QUERY_PROMPT}\n\nOriginal Query: {original_query.strip()}\n"
-
-        response = client.models.generate_content(
-            model=config.LLM_MODEL,
-            contents=prompt,
-        )
-
-        text = response.text.strip()
+        text = get_llm().complete(prompt).strip()
         
         # Parse output into lines, ignoring empty ones
         for line in text.split("\n"):

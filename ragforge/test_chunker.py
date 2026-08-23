@@ -133,16 +133,21 @@ class TestChunkDocuments:
         chunk_ids = [c["metadata"]["chunk_id"] for c in chunks]
         assert chunk_ids == list(range(len(chunks)))
 
-    def test_chunk_ids_are_global_across_documents(self):
-        """chunk_ids should be unique across multiple documents, not reset per doc."""
+    def test_chunk_ids_reset_per_source(self):
+        """chunk_id is local to each source so re-ingest IDs stay stable."""
         doc1 = self._make_doc("A" * 500, source="doc1.txt")
         doc2 = self._make_doc("B" * 500, source="doc2.txt")
 
         chunks = chunk_documents([doc1, doc2], chunk_size=200, overlap=20)
 
-        chunk_ids = [c["metadata"]["chunk_id"] for c in chunks]
-        # Should be 0, 1, 2, 3, 4... not 0,1,2 then 0,1,2 again
-        assert chunk_ids == list(range(len(chunks)))
+        ids_by_source = {}
+        for c in chunks:
+            ids_by_source.setdefault(c["metadata"]["source"], []).append(c["metadata"]["chunk_id"])
+
+        assert ids_by_source["doc1.txt"] == list(range(len(ids_by_source["doc1.txt"])))
+        assert ids_by_source["doc2.txt"] == list(range(len(ids_by_source["doc2.txt"])))
+        assert ids_by_source["doc1.txt"][0] == 0
+        assert ids_by_source["doc2.txt"][0] == 0
 
     def test_short_doc_creates_single_chunk(self):
         doc = self._make_doc("Short document.")

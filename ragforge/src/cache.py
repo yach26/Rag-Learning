@@ -50,9 +50,12 @@ def get_cached_answer(query: str, strategy: str) -> Optional[str]:
     
     key = f"{normalized}_{strategy}"
     if key in cache:
+        from src.metrics import metrics
+        metrics.record_cache(True)
         logger.info(f"Cache hit for query: '{query}'")
         return cache[key]
-        
+    from src.metrics import metrics
+    metrics.record_cache(False)
     return None
 
 def set_cached_answer(query: str, strategy: str, answer: str) -> None:
