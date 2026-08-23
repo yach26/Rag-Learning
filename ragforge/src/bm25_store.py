@@ -1,125 +1,135 @@
 """
-src/bm25_store.py — BM25 keyword index (persisted)
-===================================================
+src/bm25_store.py — SQLite FTS5 keyword index (scalable)
+=========================================================
 
-Index is pickled to data/.bm25_index.pkl and reused when the Chroma
-collection count matches. Rebuilds after ingest/purge.
+Replaces rank-bm25 to remove the in-memory load bottleneck.
+Uses SQLite's FTS5 extension for fast on-disk keyword search.
 """
 
 from __future__ import annotations
 
 import logging
-import pickle
+import sqlite3
 import re
 from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
+import json
 
 from src.config import config
 
 logger = logging.getLogger("RAGForge.BM25Store")
 
-_bm25_index = None
-_all_chunks: List[Dict[str, Any]] = []
-_index_fingerprint: Optional[int] = None
+_db_path = config.PROJECT_ROOT / "data" / "sparse_index.db"
+_all_chunks_cache: List[Dict[str, Any]] = []
 
+def _get_conn():
+    _db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(_db_path))
+    conn.row_factory = sqlite3.Row
+    return conn
 
-def _tokenise(text: str) -> List[str]:
-    text = text.lower()
-    return re.findall(r"[a-z0-9]+", text)
-
+def _init_db(conn):
+    conn.execute("DROP TABLE IF EXISTS chunks_fts;")
+    conn.execute("DROP TABLE IF EXISTS chunk_metadata;")
+    conn.execute(
+        "CREATE VIRTUAL TABLE chunks_fts USING fts5(text, tokenize='porter');"
+    )
+    conn.execute(
+        "CREATE TABLE chunk_metadata (rowid INTEGER PRIMARY KEY, chunk_json TEXT);"
+    )
+    conn.commit()
 
 def _collection_count() -> int:
     from src.vector_store import get_collection_stats
     return int(get_collection_stats()["total_chunks"])
 
-
-def _persist(index, chunks: List[Dict[str, Any]], fingerprint: int) -> None:
-    path = config.BM25_INDEX_PATH
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"fingerprint": fingerprint, "chunks": chunks, "index": index}
-    with path.open("wb") as f:
-        pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
-    logger.info("Persisted BM25 index (%s chunks) to %s", len(chunks), path)
-
-
-def _load_persisted(expected_fingerprint: int):
-    path = config.BM25_INDEX_PATH
-    if not path.exists():
-        return None
-    try:
-        with path.open("rb") as f:
-            payload = pickle.load(f)
-        if payload.get("fingerprint") != expected_fingerprint:
-            logger.info("BM25 pickle fingerprint mismatch — rebuilding.")
-            return None
-        return payload["index"], payload["chunks"]
-    except Exception as e:
-        logger.warning("Failed to load BM25 pickle (%s) — rebuilding.", e)
-        return None
-
-
 def build_index(chunks: List[Dict[str, Any]], fingerprint: Optional[int] = None) -> None:
-    global _bm25_index, _all_chunks, _index_fingerprint
-
-    try:
-        from rank_bm25 import BM25Okapi
-    except ImportError:
-        raise RuntimeError("rank-bm25 is not installed. Run: pip install rank-bm25")
-
-    logger.info("Building BM25 index over %s chunk(s)...", len(chunks))
-    _all_chunks = chunks
-    corpus = [_tokenise(c.get("text", "")) for c in chunks]
-    _bm25_index = BM25Okapi(corpus)
-    _index_fingerprint = fingerprint if fingerprint is not None else len(chunks)
-    try:
-        _persist(_bm25_index, _all_chunks, _index_fingerprint)
-    except Exception as e:
-        logger.warning("Could not persist BM25 index: %s", e)
-    logger.info("BM25 index built.")
-
+    logger.info("Building SQLite FTS5 index over %s chunk(s)...", len(chunks))
+    
+    conn = _get_conn()
+    _init_db(conn)
+    
+    cursor = conn.cursor()
+    for i, chunk in enumerate(chunks):
+        text = chunk.get("text", "")
+        # Insert explicitly with rowid=i so that it matches Python list indexing (0-based)
+        cursor.execute("INSERT INTO chunks_fts (rowid, text) VALUES (?, ?)", (i, text))
+        cursor.execute("INSERT INTO chunk_metadata (rowid, chunk_json) VALUES (?, ?)", (i, json.dumps(chunk)))
+        
+    conn.commit()
+    conn.close()
+    
+    global _all_chunks_cache
+    _all_chunks_cache = chunks
+    logger.info("SQLite FTS5 index built.")
 
 def get_index() -> Tuple[Any, List[Dict[str, Any]]]:
-    global _bm25_index, _all_chunks, _index_fingerprint
-
-    fingerprint = _collection_count()
-    if _bm25_index is not None and _index_fingerprint == fingerprint:
-        return _bm25_index, _all_chunks
-
-    loaded = _load_persisted(fingerprint)
-    if loaded is not None:
-        _bm25_index, _all_chunks = loaded
-        _index_fingerprint = fingerprint
-        logger.info("Loaded persisted BM25 index (%s chunks).", len(_all_chunks))
-        return _bm25_index, _all_chunks
-
-    from src.vector_store import get_all_chunks
-
-    chunks = get_all_chunks()
-    if not chunks:
-        raise RuntimeError(
-            "BM25 index is empty — no chunks in vector store. "
-            "Run ingestion first: python -m src.ingest"
-        )
-    build_index(chunks, fingerprint=fingerprint)
-    return _bm25_index, _all_chunks
-
+    # Returns (None, chunks) to satisfy legacy retriever callers
+    global _all_chunks_cache
+    
+    try:
+        fingerprint = _collection_count()
+    except Exception:
+        fingerprint = 0
+        
+    if not _db_path.exists():
+        from src.vector_store import get_all_chunks
+        chunks = get_all_chunks()
+        if not chunks:
+            raise RuntimeError("BM25 index is empty — no chunks in vector store.")
+        build_index(chunks)
+    elif not _all_chunks_cache:
+        conn = _get_conn()
+        try:
+            rows = conn.execute("SELECT chunk_json FROM chunk_metadata ORDER BY rowid").fetchall()
+            _all_chunks_cache = [json.loads(row["chunk_json"]) for row in rows]
+        except sqlite3.OperationalError:
+            _all_chunks_cache = []
+        conn.close()
+        
+        if len(_all_chunks_cache) != fingerprint:
+            logger.info("FTS count mismatch with Chroma. Rebuilding...")
+            from src.vector_store import get_all_chunks
+            chunks = get_all_chunks()
+            if chunks:
+                build_index(chunks)
+            else:
+                _all_chunks_cache = []
+            
+    return None, _all_chunks_cache
 
 def bm25_query(query: str, top_n: int) -> List[Tuple[int, float]]:
-    index, chunks = get_index()
-    tokens = _tokenise(query)
-    scores = index.get_scores(tokens)
-    ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
-    return ranked[:top_n]
-
+    clean_query = re.sub(r'[^a-zA-Z0-9\s]', ' ', query).strip()
+    if not clean_query:
+        return []
+        
+    # Split by spaces and join with OR for standard keyword search behavior
+    fts_query = " OR ".join(clean_query.split())
+    
+    conn = _get_conn()
+    try:
+        # FTS5 bm25() returns negative values (more negative = better score)
+        # We multiply by -1 to get positive scores for compatibility
+        cursor = conn.execute(
+            "SELECT rowid, bm25(chunks_fts) * -1 as score FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY score DESC LIMIT ?",
+            (fts_query, top_n)
+        )
+        results = [(row["rowid"], row["score"]) for row in cursor.fetchall()]
+    except sqlite3.OperationalError as e:
+        logger.warning(f"FTS query error '{fts_query}': {e}")
+        results = []
+    finally:
+        conn.close()
+        
+    return results
 
 def invalidate_index() -> None:
-    global _bm25_index, _all_chunks, _index_fingerprint
-    _bm25_index = None
-    _all_chunks = []
-    _index_fingerprint = None
-    path = config.BM25_INDEX_PATH
-    if path.exists():
+    global _all_chunks_cache
+    _all_chunks_cache = []
+    if _db_path.exists():
         try:
-            path.unlink()
+            _db_path.unlink()
         except OSError:
             pass
-    logger.info("BM25 index invalidated.")
+    logger.info("SQLite FTS5 index invalidated.")
+

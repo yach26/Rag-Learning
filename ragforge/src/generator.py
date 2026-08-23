@@ -194,9 +194,7 @@ def generate_answer_with_correction(
         yield f"\n\nSelf-correction failed: {e}"
 
 
-# Back-compat alias used by older experiment scripts.
-def _get_client():
-    return get_llm()
+
 
 
 if __name__ == "__main__":
