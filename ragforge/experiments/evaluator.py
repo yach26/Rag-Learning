@@ -65,7 +65,7 @@ def load_qa_pairs(path: Path) -> List[Dict]:
         and not any("your_document" in s for s in p.get("expected_sources", []))
     ]
     if not real_pairs:
-        print("\n⚠️  eval/qa_pairs.json only has placeholder questions.")
+        print("\n[WARNING] eval/qa_pairs.json only has placeholder questions.")
         print("   Add real questions to run this benchmark.")
         sys.exit(0)
     return real_pairs
@@ -108,7 +108,7 @@ def main():
     qa_path = PROJECT_ROOT / "eval" / "qa_pairs.json"
     qa_pairs = load_qa_pairs(qa_path)
     
-    print(f"\n🔬 RAGForge — Automated Evaluation")
+    print(f"\nRAGForge — Automated Evaluation")
     print(f"   Strategy: {args.strategy}")
     print(f"   Questions: {len(qa_pairs)}\n")
 
@@ -128,10 +128,10 @@ def main():
             if evaluation["faithfulness"]:
                 scores["faithful_count"] += 1
                 
-            faith_icon = "✅" if evaluation["faithfulness"] else "❌"
+            faith_icon = "[PASS]" if evaluation["faithfulness"] else "[FAIL]"
             print(f"    ↳ Rel: {evaluation['relevance']}/5 | Faithful: {faith_icon} | {evaluation['reason'][:60]}...")
         except Exception as e:
-            print(f"    ↳ ⚠️ Error: {e}")
+            print(f"    ↳ [ERROR] {e}")
 
     # Print summary
     if scores["relevance"]:

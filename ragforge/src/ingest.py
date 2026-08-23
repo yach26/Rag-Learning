@@ -55,7 +55,7 @@ def _check_ocr_available() -> bool:
     except Exception:
         _OCR_AVAILABLE = False
         print(
-            "  [OCR] ⚠️  pytesseract or Tesseract binary not found — "
+            "  [OCR] WARNING: pytesseract or Tesseract binary not found — "
             "OCR fallback disabled for this session.\n"
             "       Install: winget install UB-Mannheim.TesseractOCR  "
             "(then restart)"
@@ -136,7 +136,7 @@ def load_pdf(file_path: Path) -> List[Document]:
 
     if not pages and total_pages > 0:
         print(
-            f"  [PDF] ⚠️  WARNING: 0 of {total_pages} page(s) had extractable text. "
+            f"  [PDF] WARNING: 0 of {total_pages} page(s) had extractable text. "
             f"'{file_path.name}' is likely a scanned/image-only PDF. "
             + (
                 "OCR was attempted but also yielded no text — "
@@ -322,7 +322,7 @@ def run_ingestion_pipeline() -> None:
             files_to_process.append(file_path)
 
     if not files_to_process:
-        print("\n✓ All files are unchanged — nothing to re-embed.")
+        print("\n[OK] All files are unchanged — nothing to re-embed.")
         stats = get_collection_stats()
         print(f"  ChromaDB still contains {stats['total_chunks']} chunk(s).")
         print("=" * 60)
@@ -389,7 +389,7 @@ def run_ingestion_pipeline() -> None:
     print(f"\n  ChromaDB now contains {stats['total_chunks']} total chunk(s)")
 
     print("\n" + "=" * 60)
-    print("✓ Ingestion complete!")
+    print("[OK] Ingestion complete!")
     if skipped:
         print(f"  Skipped (unchanged): {skipped}")
     if failed_files:

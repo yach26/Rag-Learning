@@ -74,8 +74,8 @@ def _split_on_separator(text: str, separator: str) -> List[str]:
         # Character-level fallback — split into individual chars.
         return list(text)
     if separator in (". ", "? ", "! "):
-        # Keep sentence-ending punctuation with the chunk it belongs to.
-        parts = re.split(r"(?<=[.?!])\s+", text)
+        # Keep sentence-ending punctuation and space with the chunk it belongs to.
+        parts = re.split(r"(?<=[.?!]\s)", text)
     else:
         parts = text.split(separator)
     return [p for p in parts if p]
@@ -202,9 +202,8 @@ def chunk_documents(
     """
     Chunk all documents and attach metadata to each chunk.
 
-    chunk_id is LOCAL to each source file — stable across re-ingestion
-    runs regardless of what other files exist or their order.
-    global_index is cosmetic only (display order), not used for IDs.
+    chunk_id is sequential across documents to maintain chunk indexing consistency.
+    local_chunk_id is LOCAL to each source file for per-file tracking.
     """
     all_chunks: List[Chunk] = []
     per_source_counter: Dict[str, int] = {}   # source filename -> next local chunk_id
@@ -228,8 +227,9 @@ def chunk_documents(
                 "text": chunk_text_piece,
                 "metadata": {
                     **source_metadata,
-                    "chunk_id": local_chunk_id,      # STABLE, local to this file
-                    "global_index": global_index,     # cosmetic only
+                    "chunk_id": global_index,        # Sequential global chunk_id
+                    "local_chunk_id": local_chunk_id, # Local to this file
+                    "global_index": global_index,     # Cosmetic display order
                     "chunk_size": len(chunk_text_piece),
                 }
             }

@@ -1,35 +1,37 @@
-# ─── Secrets ───────────────────────────────────
+# ── Secrets ───────────────────────────────────
 .env
 
-# ─── Vector DB (generated, do not commit) ──────
+# ── Vector DB & Local Cache (generated, do not commit) ──────
 chroma_db/
 data/query_cache.json
+data/.file_hashes.json
+data/entity_graph.json
 data/documents/*
 !data/documents/.gitkeep
 
-# ─── Python cache ──────────────────────────────
+# ── Python cache ──────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
 .Python
 
-# ─── Virtual environments ───────────────────────
+# ── Virtual environments ───────────────────────
 venv/
 .venv/
 env/
 ENV/
 
-# ─── Build artifacts ────────────────────────────
+# ── Build artifacts ────────────────────────────
 *.egg-info/
 dist/
 build/
 
-# ─── IDE / OS ───────────────────────────────────
+# ── IDE / OS ───────────────────────────────────
 .idea/
 .vscode/
 *.DS_Store
 Thumbs.db
 
-# ─── pytest cache ───────────────────────────────
+# ── pytest cache ───────────────────────────────
 .pytest_cache/

@@ -245,7 +245,7 @@ def generate_answer(
 
     try:
         client = _get_client()
-        logger.info(f"Calling Gemini API (model: {config.LLM_MODEL})...")
+        logger.info(f"Calling LLM API (model: {config.LLM_MODEL})...")
         response = client.models.generate_content(
             model=config.LLM_MODEL,
             contents=prompt,
@@ -253,7 +253,7 @@ def generate_answer(
         return response.text
     except Exception as e:
         raise RuntimeError(
-            f"Gemini API call failed: {e}\nCheck your API key and internet connection."
+            f"LLM API call failed: {e}\nCheck your API key and internet connection."
         ) from e
 
 
@@ -286,7 +286,7 @@ def generate_answer_stream(
             )
             
         try:
-            logger.info(f"Calling Gemini API (streaming, model: {config.LLM_MODEL})...")
+            logger.info(f"Calling LLM API (streaming, model: {config.LLM_MODEL})...")
             stream = _get_stream()
             
             for event in stream:
@@ -295,7 +295,7 @@ def generate_answer_stream(
         except Exception as e:
             # Surface mid-stream failures as visible text rather than
             # crashing the whole UI silently.
-            yield f"\n\n⚠️ *Response cut off — stream error: {e}*"
+            yield f"\n\nResponse cut off — stream error: {e}"
 
     return _iterate()
 
@@ -313,14 +313,13 @@ def generate_answer_with_correction(
     Yields status updates along the way so the UI isn't completely dead.
     """
     _require_api_key()
-    
-    yield "🔄 *Drafting initial answer...*\n\n"
-    
+
+    yield "*Drafting initial answer...*\n\n"
+
     try:
-        # We must generate non-streaming to evaluate it
         draft_answer = generate_answer(query, retrieved_chunks, conversation_history)
-        
-        yield "🧐 *Self-evaluating answer quality...*\n\n"
+
+        yield "*Evaluating answer quality...*\n\n"
         
         # Build evaluator prompt
         context_parts = []
@@ -334,8 +333,7 @@ def generate_answer_with_correction(
             draft=draft_answer.strip()
         )
         
-        from google import genai
-        client = genai.Client(api_key=config.LLM_API_KEY)
+        client = _get_client()
         response = client.models.generate_content(
             model=config.LLM_MODEL,
             contents=eval_prompt,
@@ -343,15 +341,16 @@ def generate_answer_with_correction(
         eval_result = response.text.strip().upper()
         
         if eval_result.startswith("YES"):
-            yield "✅ *Evaluation passed.*\n\n---\n\n"
             yield draft_answer
         else:
-            yield "❌ *Evaluation failed.*\n\n"
-            yield f"**Draft was:**\n{draft_answer}\n\n**Critique:**\n{eval_result}\n\n"
-            yield "---\n\n*Sorry, I couldn't generate a confident answer based on the provided context.*"
-            
+            yield (
+                "I couldn't generate a confident answer based on the provided context.\n\n"
+                f"**Draft:** {draft_answer}\n\n"
+                f"**Evaluation:** {eval_result}"
+            )
+
     except Exception as e:
-        yield f"\n\n⚠️ *Self-correction pipeline failed: {e}*"
+        yield f"\n\nSelf-correction failed: {e}"
 
 
 if __name__ == "__main__":
@@ -360,7 +359,7 @@ if __name__ == "__main__":
     print("=" * 60)
     print("RAGForge — Generation Test")
     print("=" * 60)
-    print("(Requires: ingested documents + valid LLM_API_KEY in .env)\n")
+    print("(Requires: ingested documents + valid GROQ_API_KEY in .env)\n")
 
     query = input("Enter your question: ").strip()
     if not query:

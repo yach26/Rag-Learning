@@ -1,0 +1,44 @@
+# ── Secrets ───────────────────────────────────
+.env
+*.env
+ragforge/.env
+
+# ── Local Data & Vector DB ───────────────────
+chroma_db/
+ragforge/chroma_db/
+ragforge/data/query_cache.json
+ragforge/data/.file_hashes.json
+ragforge/data/entity_graph.json
+ragforge/data/documents/*
+!ragforge/data/documents/.gitkeep
+
+# ── Python Cache ──────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+ragforge/**/__pycache__/
+
+# ── Virtual Environments ──────────────────────
+venv/
+.venv/
+env/
+ENV/
+ragforge/venv/
+ragforge/.venv/
+
+# ── Build Artifacts ───────────────────────────
+*.egg-info/
+dist/
+build/
+
+# ── IDE & OS ──────────────────────────────────
+.idea/
+.vscode/
+*.DS_Store
+Thumbs.db
+
+# ── Test Caches ───────────────────────────────
+.pytest_cache/
+ragforge/.pytest_cache/

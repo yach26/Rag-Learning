@@ -106,3 +106,7 @@ def rerank(
     except Exception as e:
         logger.warning(f"Reranking failed ({e}) — returning original order.")
         return chunks[:top_k]
+
+
+# Alias used by multi_query, hyde, and graph_augmented retrieval strategies.
+rerank_chunks = rerank

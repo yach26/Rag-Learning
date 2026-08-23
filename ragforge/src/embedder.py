@@ -48,7 +48,8 @@ def _get_model() -> SentenceTransformer:
             ) from e
 
         logger.info("Embedding model loaded successfully.")
-        logger.info(f"Vector dimensions: {_model.get_sentence_embedding_dimension()}")
+        dim = getattr(_model, "get_embedding_dimension", getattr(_model, "get_sentence_embedding_dimension", None))()
+        logger.info(f"Vector dimensions: {dim}")
 
     return _model
 

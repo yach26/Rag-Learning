@@ -44,7 +44,7 @@ Happy learning!
 
 ---
 
-## 🚀 RAGForge: The Practical Implementation
+## RAGForge: The Practical Implementation
 
 This repository also contains **RAGForge** in the `ragforge/` directory — a learning-first Retrieval-Augmented Generation system built entirely from scratch in Python, without relying on black-box wrappers like LangChain or LlamaIndex.
 
@@ -56,7 +56,7 @@ The foundational system teaches the core components:
 - **Chunking**: Overlapping sliding-window text chunking (~500 tokens).
 - **Embeddings**: Generating 384-dimensional dense vectors using `all-MiniLM-L6-v2`.
 - **Vector Store**: Local similarity search using ChromaDB.
-- **Generation**: Grounded, hallucination-free generation using Google Gemini.
+- **Generation**: Grounded, hallucination-free generation using Groq LLMs.
 
 ### Phase 2: Advanced Production Features
 Phase 2 upgrades the basic pipeline to solve real-world retrieval failures:
@@ -129,7 +129,7 @@ Phase 3 introduces advanced semantic techniques and strict guardrails for robust
                    ↓
            Prompt + Context
                    ↓
-              Gemini LLM (Draft)
+              Groq LLM (Draft)
                    ↓
          [Self-Correction Eval] ──→ Fail? ──→ Fallback
                    ↓ (Pass)
@@ -147,7 +147,7 @@ cd ragforge
 python -m venv venv
 venv\Scripts\activate          # Windows
 pip install -r requirements.txt
-copy .env.example .env         # Add your LLM_API_KEY
+copy .env.example .env         # Add your GROQ_API_KEY
 ```
 
 **2. Add Documents & Ingest**
@@ -161,3 +161,8 @@ python -m src.ingest
 streamlit run app.py
 ```
 Open your browser to `http://localhost:8501` to start chatting with your documents!
+
+**Optional: Build entity graph (for Graph-Augmented strategy)**
+```bash
+python -m src.graph_builder
+```

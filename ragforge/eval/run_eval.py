@@ -102,11 +102,11 @@ def run_eval(qa_file: Path, top_k: int) -> None:
             continue
 
         hit, info = is_hit(retrieved, expected_sources, expected_pages)
-        icon = "✓" if hit else "✗"
+        tag = "[HIT]" if hit else "[MISS]"
         label = "hit " if hit else "miss"
-        question_preview = question[:55] + "…" if len(question) > 55 else question
+        question_preview = question[:55] + "..." if len(question) > 55 else question
 
-        print(f"  {icon}  Q{i:02d}  \"{question_preview}\"")
+        print(f"  {tag}  Q{i:02d}  \"{question_preview}\"")
         print(f"         → {label}  ({info})")
 
         if hit:
